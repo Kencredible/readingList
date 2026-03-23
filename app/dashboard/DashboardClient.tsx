@@ -15,7 +15,7 @@ type Book = {
   cover_url: string | null
 }
 
-type Tab = 'all' | 'reading' | 'read' | 'want'
+type Tab = 'all' | 'reading' | 'read' | 'want' | 'hof'
 
 const COLORS = ['#2D5A3D','#2B4FA0','#9B4A1A','#6B3A8F','#1A6B6B','#7A3535','#4A6B1A','#2A5A7A']
 
@@ -51,12 +51,12 @@ const S: Record<string, React.CSSProperties> = {
   yearFilterWrap: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap' as const },
 }
 
-function NavItem({ label, icon, tab, active, count, onClick }: { label: string; icon: string; tab: Tab; active: boolean; count: number; onClick: () => void }) {
+function NavItem({ label, icon, tab, active, count, onClick }: { label: string; icon: string; tab: Tab; active: boolean; count?: number; onClick: () => void }) {
   return (
     <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderRadius: 10, fontSize: 14, color: active ? 'var(--accent)' : 'var(--text2)', background: active ? 'var(--accent-light)' : 'none', fontWeight: active ? 500 : 400, border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', marginBottom: 2 }}>
       <span style={{ fontSize: 15, width: 20, textAlign: 'center' }}>{icon}</span>
       {label}
-      <span style={{ marginLeft: 'auto', fontSize: 11, background: active ? 'var(--accent)' : 'var(--surface2)', color: active ? 'white' : 'var(--text3)', padding: '2px 7px', borderRadius: 20, fontWeight: 500 }}>{count}</span>
+      {count !== undefined && <span style={{ marginLeft: 'auto', fontSize: 11, background: active ? 'var(--accent)' : 'var(--surface2)', color: active ? 'white' : 'var(--text3)', padding: '2px 7px', borderRadius: 20, fontWeight: 500 }}>{count}</span>}
     </button>
   )
 }
@@ -187,11 +187,14 @@ export default function DashboardClient({ userName }: { userName: string }) {
   let displayed = tab === 'all' ? books : books.filter(b => b.status === tab)
   if (tab === 'read' && selectedYear) displayed = displayed.filter(b => b.start_date?.slice(0, 4) === selectedYear)
 
+  const hofBooks = readBooks.filter(b => b.rating === 5)
+
   const TAB_LABELS: Record<Tab, [string, string]> = {
     all:     ['All books',    'Your complete reading collection'],
     read:    ['Finished',     'Books you have completed'],
     reading: ['Reading now',  'Currently in progress'],
     want:    ['Want to read', 'Your reading wishlist'],
+    hof:     ['Hall of Fame', 'Your 5-star reads'],
   }
 
   const suggestedBook = suggestedId ? books.find(b => b.id === suggestedId) : null
@@ -205,10 +208,12 @@ export default function DashboardClient({ userName }: { userName: string }) {
           <p style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>Hi, {userName} 👋</p>
         </div>
         <div style={S.nav}>
-          <NavItem label="All books"    icon="📚" tab="all"     active={tab === 'all'}     count={books.length}                                     onClick={() => switchTab('all')} />
-          <NavItem label="Reading now"  icon="📖" tab="reading" active={tab === 'reading'} count={readingBooks.length}                               onClick={() => switchTab('reading')} />
-          <NavItem label="Finished"     icon="✓"  tab="read"    active={tab === 'read'}    count={readBooks.length}                                  onClick={() => switchTab('read')} />
-          <NavItem label="Want to read" icon="🔖" tab="want"    active={tab === 'want'}    count={wantBooks.length}                                  onClick={() => switchTab('want')} />
+          <NavItem label="All books"    icon="📚" tab="all"     active={tab === 'all'}     count={books.length}       onClick={() => switchTab('all')} />
+          <NavItem label="Reading now"  icon="📖" tab="reading" active={tab === 'reading'} count={readingBooks.length} onClick={() => switchTab('reading')} />
+          <NavItem label="Finished"     icon="✓"  tab="read"    active={tab === 'read'}    count={readBooks.length}   onClick={() => switchTab('read')} />
+          <NavItem label="Want to read" icon="🔖" tab="want"    active={tab === 'want'}    count={wantBooks.length}   onClick={() => switchTab('want')} />
+          <div style={{ height: 1, background: 'var(--border)', margin: '8px 12px' }} />
+          <NavItem label="Hall of Fame" icon="🏆" tab="hof"     active={tab === 'hof'}                                onClick={() => switchTab('hof')} />
         </div>
         <div style={{ padding: '0 0.75rem' }}>
           <button onClick={logout} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px', border: 'none', background: 'none', color: 'var(--text3)', fontSize: 14, cursor: 'pointer', width: '100%', fontFamily: 'DM Sans, sans-serif', borderRadius: 10 }}>
@@ -258,8 +263,8 @@ export default function DashboardClient({ userName }: { userName: string }) {
           </div>
         )}
 
-        {/* Suggestion */}
-        {wantBooks.length > 0 && suggestedBook && (
+        {/* Suggestion — only on Reading Now tab */}
+        {tab === 'reading' && wantBooks.length > 0 && suggestedBook && (
           <div style={S.randCard}>
             {suggestedBook.cover_url ? (
               <img src={suggestedBook.cover_url} alt={suggestedBook.title} style={{ width: 48, height: 68, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }} />
@@ -318,8 +323,53 @@ export default function DashboardClient({ userName }: { userName: string }) {
           </div>
         )}
 
+        {/* Hall of Fame */}
+        {tab === 'hof' && (
+          <style>{`
+            .hof-cover { position: relative; border-radius: 8px; overflow: hidden; break-inside: avoid; margin-bottom: 16px; }
+            .hof-cover img { width: 100%; display: block; }
+            .hof-cover-fallback { aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; background: var(--surface2); }
+            .hof-overlay { position: absolute; inset: 0; background: rgba(20,14,6,0.82); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; opacity: 0; transition: opacity 0.2s ease; padding: 12px; text-align: center; }
+            .hof-cover:hover .hof-overlay { opacity: 1; }
+          `}</style>
+        )}
+        {tab === 'hof' && (
+          hofBooks.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text3)' }}>
+              <div style={{ fontSize: 48, marginBottom: 16 }}>🏆</div>
+              <p style={{ fontSize: 16, fontFamily: 'Lora, serif', fontWeight: 600, color: 'var(--text2)' }}>No 5-star books yet</p>
+              <p style={{ fontSize: 14, marginTop: 8 }}>Rate a finished book 5 stars and it will appear here</p>
+            </div>
+          ) : (
+            <div style={{ columns: 'auto 160px', columnGap: 16 }}>
+              {hofBooks.map(b => {
+                const days = b.start_date && b.end_date ? daysBetween(b.start_date, b.end_date) : null
+                const color = colorFor(b.title)
+                return (
+                  <div key={b.id} className="hof-cover">
+                    {b.cover_url
+                      ? <img src={b.cover_url} alt={b.title} />
+                      : <div className="hof-cover-fallback"><div style={{ width: 6, height: '50%', borderRadius: 3, background: color }} /></div>
+                    }
+                    <div className="hof-overlay">
+                      <div style={{ fontFamily: 'Lora, serif', fontSize: 13, fontWeight: 600, color: 'white', lineHeight: 1.3 }}>{b.title}</div>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>{b.author}</div>
+                      {days && (
+                        <div style={{ marginTop: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: 'white', fontWeight: 500 }}>
+                          {days} day{days !== 1 ? 's' : ''} to read
+                        </div>
+                      )}
+                      <div style={{ color: '#F5C842', fontSize: 14, marginTop: 2 }}>★★★★★</div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )
+        )}
+
         {/* Book list */}
-        {loading ? (
+        {tab !== 'hof' && (loading ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text3)', fontSize: 14 }}>Loading your books…</div>
         ) : displayed.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text3)' }}>
@@ -431,7 +481,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
               </div>
             ))
           })()
-        )}
+        ))}
       </main>
 
       {/* Delete modal */}
