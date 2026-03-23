@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Book = {
@@ -45,7 +45,8 @@ const S: Record<string, React.CSSProperties> = {
   formPanel: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '1.5rem', marginBottom: '1.75rem', boxShadow: '0 8px 32px rgba(40,28,10,0.12)' },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 },
   input: { background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: 10, padding: '9px 12px', fontSize: 14, color: 'var(--text)', fontFamily: 'DM Sans, sans-serif', outline: 'none', width: '100%' },
-  bookCard: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 2px 12px rgba(40,28,10,0.08)', marginBottom: 8 },
+  bookCard: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 16, padding: '14px', display: 'flex', flexDirection: 'column' as const, gap: 10, boxShadow: '0 2px 12px rgba(40,28,10,0.08)', cursor: 'default' },
+  inlineForm: { gridColumn: '1 / -1', background: 'var(--surface)', border: '1.5px solid var(--accent)', borderRadius: 16, padding: '1.5rem', boxShadow: '0 8px 32px rgba(40,28,10,0.12)', animation: 'slideDown 0.2s ease' },
   randCard: { flex: 1, background: 'var(--surface)', border: '1.5px solid rgba(193,123,42,0.35)', borderRadius: 16, padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 8px 32px rgba(40,28,10,0.12)', marginBottom: '1.75rem' },
   yearFilterWrap: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem', flexWrap: 'wrap' as const },
 }
@@ -130,13 +131,16 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
   function openForm(book?: Book) {
     if (book) {
+      // Inline edit — toggle off if clicking same book
+      if (editingId === book.id) { setEditingId(null); return }
       setEditingId(book.id)
+      setShowForm(false) // close the add form if open
       setForm({ title: book.title, author: book.author, status: book.status, genre: book.genre ?? '', start_date: book.start_date ?? '', end_date: book.end_date ?? '', rating: book.rating?.toString() ?? '', notes: book.notes ?? '' })
     } else {
       setEditingId(null)
+      setShowForm(s => !s)
       setForm(emptyForm)
     }
-    setShowForm(true)
   }
 
   async function saveBook() {
@@ -148,6 +152,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
     await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
     setSaving(false)
     setShowForm(false)
+    setEditingId(null)
     fetchBooks()
   }
 
@@ -273,10 +278,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
           </div>
         )}
 
-        {/* Add/Edit form */}
-        {showForm && (
+        {/* Add book form — only shown when adding new, not editing */}
+        {showForm && !editingId && (
           <div style={S.formPanel}>
-            <h3 style={{ fontFamily: 'Lora, serif', fontSize: 16, fontWeight: 600, marginBottom: '1.25rem' }}>{editingId ? 'Edit book' : 'Add a book'}</h3>
+            <h3 style={{ fontFamily: 'Lora, serif', fontSize: 16, fontWeight: 600, marginBottom: '1.25rem' }}>Add a book</h3>
             <div style={S.formGrid}>
               <FormGroup label="Title *" full><input style={S.input} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Book title" /></FormGroup>
               <FormGroup label="Author *" full><input style={S.input} value={form.author} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} placeholder="Author name" /></FormGroup>
@@ -326,62 +331,103 @@ export default function DashboardClient({ userName }: { userName: string }) {
             const groups: [string, Book[]][] = tab === 'all'
               ? [['Currently reading', displayed.filter(b => b.status === 'reading')], ['Finished', displayed.filter(b => b.status === 'read')], ['Want to read', displayed.filter(b => b.status === 'want')]]
               : [['', displayed]]
+
+            const inlineFormEl = (
+              <div style={S.inlineForm}>
+                <h3 style={{ fontFamily: 'Lora, serif', fontSize: 16, fontWeight: 600, marginBottom: '1.25rem' }}>Edit book</h3>
+                <div style={S.formGrid}>
+                  <FormGroup label="Title *" full><input style={S.input} value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Book title" /></FormGroup>
+                  <FormGroup label="Author *" full><input style={S.input} value={form.author} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} placeholder="Author name" /></FormGroup>
+                  <FormGroup label="Status">
+                    <select style={S.input} value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Book['status'] }))}>
+                      <option value="want">Want to read</option>
+                      <option value="reading">Currently reading</option>
+                      <option value="read">Finished</option>
+                    </select>
+                  </FormGroup>
+                  <FormGroup label="Genre"><input style={S.input} value={form.genre} onChange={e => setForm(f => ({ ...f, genre: e.target.value }))} placeholder="e.g. Fiction…" /></FormGroup>
+                  {(form.status === 'reading' || form.status === 'read') && (
+                    <FormGroup label="Date started"><input type="date" style={S.input} value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} /></FormGroup>
+                  )}
+                  {form.status === 'read' && (
+                    <FormGroup label="Date finished"><input type="date" style={S.input} value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} /></FormGroup>
+                  )}
+                  {form.status === 'read' && (
+                    <FormGroup label="Rating">
+                      <select style={S.input} value={form.rating} onChange={e => setForm(f => ({ ...f, rating: e.target.value }))}>
+                        <option value="">No rating</option>
+                        {[1,2,3,4,5].map(n => <option key={n} value={n}>{'★'.repeat(n)} {['Poor','Fair','Good','Great','Excellent'][n-1]}</option>)}
+                      </select>
+                    </FormGroup>
+                  )}
+                  <FormGroup label="Notes" full><textarea style={{ ...S.input, resize: 'vertical', minHeight: 70 } as React.CSSProperties} value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Thoughts, quotes…" /></FormGroup>
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: '1.25rem' }}>
+                  <button onClick={saveBook} disabled={saving} style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: 10, padding: '9px 22px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif', opacity: saving ? 0.7 : 1 }}>
+                    {saving ? 'Saving…' : 'Save book'}
+                  </button>
+                  <button onClick={() => setEditingId(null)} style={{ background: 'none', color: 'var(--text2)', border: '1px solid var(--border2)', borderRadius: 10, padding: '9px 18px', fontSize: 14, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Cancel</button>
+                </div>
+              </div>
+            )
+
             return groups.filter(([, items]) => items.length > 0).map(([label, items]) => (
               <div key={label}>
                 {label && <div style={{ fontSize: 11, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text3)', margin: '1.5rem 0 0.75rem' }}>{label}</div>}
-                {items.map(b => {
-                  const color = colorFor(b.title)
-                  let meta = ''
-                  if (b.status === 'read' && b.start_date && b.end_date) {
-                    const d = daysBetween(b.start_date, b.end_date)
-                    meta = `${fmtDate(b.start_date)} → ${fmtDate(b.end_date)} · ${d} day${d !== 1 ? 's' : ''}`
-                  } else if (b.status === 'reading' && b.start_date) {
-                    const d = daysBetween(b.start_date)
-                    meta = `Started ${fmtDate(b.start_date)} · ${d} day${d !== 1 ? 's' : ''} in`
-                  }
-                  const badgeCls: Record<string, string> = { read: 'var(--accent-light)', reading: 'var(--blue-light)', want: 'var(--amber-light)' }
-                  const badgeTxtColor: Record<string, string> = { read: 'var(--accent)', reading: 'var(--blue)', want: 'var(--amber)' }
-                  const badgeTxt: Record<string, string> = { read: '✓ Read', reading: '● Reading', want: '🔖 Want to read' }
-                  return (
-                    <div key={b.id} style={S.bookCard}>
-                      {/* Cover image or fallback spine */}
-                      {b.cover_url ? (
-                        <img
-                          src={b.cover_url}
-                          alt={b.title}
-                          style={{ width: 48, height: 68, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }}
-                          onError={e => {
-                            (e.target as HTMLImageElement).style.display = 'none'
-                            const spine = document.createElement('div')
-                            spine.style.cssText = `width:5px;height:52px;border-radius:3px;background:${color};flex-shrink:0`
-                            e.currentTarget.parentNode?.insertBefore(spine, e.currentTarget)
-                          }}
-                        />
-                      ) : (
-                        <div style={{ width: 5, height: 52, borderRadius: 3, background: color, flexShrink: 0 }} />
-                      )}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: 'Lora, serif', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div>
-                        <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{b.author}</div>
-                        <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 5, display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-                          {b.genre && <span style={{ background: 'var(--surface2)', color: 'var(--text2)', fontSize: 11, padding: '2px 9px', borderRadius: 20 }}>{b.genre}</span>}
-                          {meta && <span>{meta}</span>}
-                          {b.rating && <span style={{ color: 'var(--amber)', fontSize: 12 }}>{stars(b.rating)}</span>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
+                  {items.map((b) => {
+                    const color = colorFor(b.title)
+                    const isEditing = editingId === b.id
+                    let meta = ''
+                    if (b.status === 'read' && b.start_date && b.end_date) {
+                      const d = daysBetween(b.start_date, b.end_date)
+                      meta = `${d} day${d !== 1 ? 's' : ''}`
+                    } else if (b.status === 'reading' && b.start_date) {
+                      const d = daysBetween(b.start_date)
+                      meta = `${d}d in`
+                    }
+                    const badgeBg: Record<string, string> = { read: 'var(--accent-light)', reading: 'var(--blue-light)', want: 'var(--amber-light)' }
+                    const badgeColor: Record<string, string> = { read: 'var(--accent)', reading: 'var(--blue)', want: 'var(--amber)' }
+                    const badgeTxt: Record<string, string> = { read: '✓ Read', reading: '● Reading', want: '🔖 Want' }
+                    return (
+                      <React.Fragment key={b.id}>
+                        <div key={b.id} style={{ ...S.bookCard, outline: isEditing ? '2px solid var(--accent)' : 'none' }}>
+                          {/* Cover */}
+                          <div style={{ position: 'relative', width: '100%', paddingBottom: '140%', borderRadius: 8, overflow: 'hidden', background: 'var(--surface2)', flexShrink: 0 }}>
+                            {b.cover_url ? (
+                              <img src={b.cover_url} alt={b.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <div style={{ width: 6, height: '60%', borderRadius: 3, background: color }} />
+                              </div>
+                            )}
+                            {/* Badge overlay */}
+                            {tab === 'all' && (
+                              <span style={{ position: 'absolute', top: 8, left: 8, fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 20, background: badgeBg[b.status], color: badgeColor[b.status] }}>{badgeTxt[b.status]}</span>
+                            )}
+                          </div>
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontFamily: 'Lora, serif', fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }}>{b.title}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.author}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 4, display: 'flex', gap: 6, flexWrap: 'wrap' as const, alignItems: 'center' }}>
+                              {b.genre && <span style={{ background: 'var(--surface2)', color: 'var(--text2)', fontSize: 10, padding: '1px 7px', borderRadius: 20 }}>{b.genre}</span>}
+                              {meta && <span>{meta}</span>}
+                              {b.rating && <span style={{ color: 'var(--amber)' }}>{'★'.repeat(b.rating)}</span>}
+                            </div>
+                          </div>
+                          {/* Actions */}
+                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                            <button onClick={() => openForm(b)} style={{ background: isEditing ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', color: isEditing ? 'var(--accent)' : 'var(--text3)', padding: 6, borderRadius: 7, fontSize: 14 }}>✎</button>
+                            <button onClick={() => setDeletingId(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, borderRadius: 7, fontSize: 14 }}>✕</button>
+                          </div>
                         </div>
-                        {b.status === 'reading' && b.start_date && (() => {
-                          const pct = Math.min(92, daysBetween(b.start_date) * 2)
-                          return <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}><div style={{ flex: 1, maxWidth: 120, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2 }} /></div><span style={{ fontSize: 11, color: 'var(--text3)' }}>{pct}%</span></div>
-                        })()}
-                        {b.notes && <div style={{ fontSize: 13, color: 'var(--text2)', fontStyle: 'italic', marginTop: 5 }}>&ldquo;{b.notes}&rdquo;</div>}
-                      </div>
-                      {tab === 'all' && <span style={{ fontSize: 11, fontWeight: 500, padding: '4px 11px', borderRadius: 20, flexShrink: 0, whiteSpace: 'nowrap', background: badgeCls[b.status], color: badgeTxtColor[b.status] }}>{badgeTxt[b.status]}</span>}
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button onClick={() => openForm(b)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, borderRadius: 7, fontSize: 14 }}>✎</button>
-                        <button onClick={() => setDeletingId(b.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text3)', padding: 6, borderRadius: 7, fontSize: 14 }}>✕</button>
-                      </div>
-                    </div>
-                  )
-                })}
+                        {/* Inline edit form — spans full grid width, inserted after the edited card */}
+                        {isEditing && inlineFormEl}
+                      </React.Fragment>
+                    )
+                  })}
+                </div>
               </div>
             ))
           })()
