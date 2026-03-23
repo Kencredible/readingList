@@ -25,7 +25,9 @@ export async function GET() {
            rating, notes, created_at
     FROM books
     WHERE user_id = ${session.userId}
-    ORDER BY created_at DESC
+    ORDER BY
+      CASE WHEN status = 'read' THEN start_date::text ELSE NULL END DESC NULLS LAST,
+      created_at DESC
   `
   return NextResponse.json(result.rows)
 }
