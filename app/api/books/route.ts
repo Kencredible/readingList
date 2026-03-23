@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql, setupDb } from '@/lib/db'
+import { sql, setupDb, fetchCoverUrl } from '@/lib/db'
 import { getSession } from '@/lib/session'
 
 const bookSchema = z.object({
@@ -22,7 +22,7 @@ export async function GET() {
     SELECT id, title, author, status, genre,
            to_char(start_date, 'YYYY-MM-DD') AS start_date,
            to_char(end_date,   'YYYY-MM-DD') AS end_date,
-           rating, notes, created_at
+           rating, notes, cover_url, created_at
     FROM books
     WHERE user_id = ${session.userId}
     ORDER BY
@@ -42,17 +42,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 })
   }
   const { title, author, status, genre, start_date, end_date, rating, notes } = parsed.data
+
+  const cover_url = await fetchCoverUrl(title, author)
+
   const result = await sql`
-    INSERT INTO books (user_id, title, author, status, genre, start_date, end_date, rating, notes)
+    INSERT INTO books (user_id, title, author, status, genre, start_date, end_date, rating, notes, cover_url)
     VALUES (
       ${session.userId}, ${title}, ${author}, ${status},
       ${genre ?? null}, ${start_date ?? null}, ${end_date ?? null},
-      ${rating ?? null}, ${notes ?? null}
+      ${rating ?? null}, ${notes ?? null}, ${cover_url}
     )
     RETURNING id, title, author, status, genre,
               to_char(start_date, 'YYYY-MM-DD') AS start_date,
               to_char(end_date,   'YYYY-MM-DD') AS end_date,
-              rating, notes, created_at
+              rating, notes, cover_url, created_at
   `
   return NextResponse.json(result.rows[0], { status: 201 })
 }

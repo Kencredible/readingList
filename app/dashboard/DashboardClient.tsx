@@ -12,6 +12,7 @@ type Book = {
   end_date: string | null
   rating: number | null
   notes: string | null
+  cover_url: string | null
 }
 
 type Tab = 'all' | 'reading' | 'read' | 'want'
@@ -255,7 +256,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
         {/* Suggestion */}
         {wantBooks.length > 0 && suggestedBook && (
           <div style={S.randCard}>
-            <div style={{ width: 5, height: 52, borderRadius: 3, background: colorFor(suggestedBook.title), flexShrink: 0 }} />
+            {suggestedBook.cover_url ? (
+              <img src={suggestedBook.cover_url} alt={suggestedBook.title} style={{ width: 48, height: 68, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }} />
+            ) : (
+              <div style={{ width: 5, height: 52, borderRadius: 3, background: colorFor(suggestedBook.title), flexShrink: 0 }} />
+            )}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--amber)', fontWeight: 500, marginBottom: 3 }}>✨ Suggested for you</div>
               <div style={{ fontFamily: 'Lora, serif', fontSize: 16, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{suggestedBook.title}</div>
@@ -339,7 +344,22 @@ export default function DashboardClient({ userName }: { userName: string }) {
                   const badgeTxt: Record<string, string> = { read: '✓ Read', reading: '● Reading', want: '🔖 Want to read' }
                   return (
                     <div key={b.id} style={S.bookCard}>
-                      <div style={{ width: 5, height: 52, borderRadius: 3, background: color, flexShrink: 0 }} />
+                      {/* Cover image or fallback spine */}
+                      {b.cover_url ? (
+                        <img
+                          src={b.cover_url}
+                          alt={b.title}
+                          style={{ width: 48, height: 68, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }}
+                          onError={e => {
+                            (e.target as HTMLImageElement).style.display = 'none'
+                            const spine = document.createElement('div')
+                            spine.style.cssText = `width:5px;height:52px;border-radius:3px;background:${color};flex-shrink:0`
+                            e.currentTarget.parentNode?.insertBefore(spine, e.currentTarget)
+                          }}
+                        />
+                      ) : (
+                        <div style={{ width: 5, height: 52, borderRadius: 3, background: color, flexShrink: 0 }} />
+                      )}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontFamily: 'Lora, serif', fontSize: 15, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div>
                         <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{b.author}</div>

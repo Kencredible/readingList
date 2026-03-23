@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { sql } from '@/lib/db'
+import { sql, fetchCoverUrl } from '@/lib/db'
 import { getSession } from '@/lib/session'
 
 const bookSchema = z.object({
@@ -25,9 +25,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: parsed.error.errors[0].message }, { status: 400 })
   }
 
-  // Fetch current book first so we can merge only changed fields
   const current = await sql`
-    SELECT title, author, status, genre, start_date, end_date, rating, notes
+    SELECT title, author, status, genre, start_date, end_date, rating, notes, cover_url
     FROM books WHERE id = ${id} AND user_id = ${session.userId}
   `
   if (current.rows.length === 0) {
@@ -46,6 +45,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const rating     = d.rating     !== undefined ? d.rating     : cur.rating
   const notes      = d.notes      !== undefined ? d.notes      : cur.notes
 
+  // Re-fetch cover if title or author changed, or if there's no cover yet
+  const titleChanged  = d.title  !== undefined && d.title  !== cur.title
+  const authorChanged = d.author !== undefined && d.author !== cur.author
+  let cover_url = cur.cover_url
+  if (titleChanged || authorChanged || !cover_url) {
+    cover_url = await fetchCoverUrl(title, author)
+  }
+
   const result = await sql`
     UPDATE books SET
       title      = ${title},
@@ -55,12 +62,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       start_date = ${start_date},
       end_date   = ${end_date},
       rating     = ${rating},
-      notes      = ${notes}
+      notes      = ${notes},
+      cover_url  = ${cover_url}
     WHERE id = ${id} AND user_id = ${session.userId}
     RETURNING id, title, author, status, genre,
               to_char(start_date, 'YYYY-MM-DD') AS start_date,
               to_char(end_date,   'YYYY-MM-DD') AS end_date,
-              rating, notes, created_at
+              rating, notes, cover_url, created_at
   `
   return NextResponse.json(result.rows[0])
 }
