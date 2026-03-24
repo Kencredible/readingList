@@ -213,21 +213,27 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
         /* ── Sidebar ── */
         .sidebar {
-          width: ${SW}px; background: var(--surface); border-right: 1px solid var(--border);
+          width: 240px; background: var(--surface); border-right: 1px solid var(--border);
           display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0;
           z-index: 20; transition: width 0.22s ease; overflow: hidden;
         }
+        .sidebar.collapsed { width: 64px; }
+
         .sidebar-top {
-          min-height: 70px; padding: 0 ${sidebarOpen ? '1.25rem' : '0'};
-          display: flex; align-items: center; justify-content: ${sidebarOpen ? 'space-between' : 'center'};
-          border-bottom: 1px solid var(--border); gap: 8px;
+          min-height: 70px; padding: 0 1.25rem;
+          display: flex; align-items: center; justify-content: space-between;
+          border-bottom: 1px solid var(--border); gap: 8px; flex-shrink: 0;
         }
+        .sidebar.collapsed .sidebar-top { padding: 0; justify-content: center; }
+
         .logo-text {
           font-family: 'Lora', serif; font-size: 17px; font-weight: 600; color: var(--text);
           line-height: 1.25; white-space: nowrap; overflow: hidden;
-          opacity: ${sidebarOpen ? 1 : 0}; transition: opacity 0.15s; pointer-events: none;
+          opacity: 1; transition: opacity 0.15s; pointer-events: none; flex: 1;
         }
+        .sidebar.collapsed .logo-text { opacity: 0; width: 0; flex: 0; }
         .logo-text em { font-style: italic; color: var(--accent); font-size: inherit; }
+
         .toggle-btn {
           flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
           border: 1px solid var(--border); background: var(--surface2);
@@ -235,40 +241,72 @@ export default function DashboardClient({ userName }: { userName: string }) {
           cursor: pointer; font-size: 12px; color: var(--text3); transition: all 0.15s;
         }
         .toggle-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
-        .sidebar-nav { flex: 1; padding: 0.75rem ${sidebarOpen ? '0.75rem' : '0.5rem'}; overflow-y: auto; }
+
+        .sidebar-nav { flex: 1; padding: 0.75rem; overflow-y: auto; overflow-x: hidden; }
+        .sidebar.collapsed .sidebar-nav { padding: 0.75rem 0.5rem; }
+
         .nav-btn {
           display: flex; align-items: center; gap: 10px;
-          padding: ${sidebarOpen ? '9px 12px' : '10px'}; justify-content: ${sidebarOpen ? 'flex-start' : 'center'};
+          padding: 9px 12px; justify-content: flex-start;
           border-radius: 10px; border: none; width: 100%; cursor: pointer;
           font-family: 'DM Sans', sans-serif; font-size: 14px; transition: all 0.15s;
           margin-bottom: 2px; white-space: nowrap; position: relative; background: none; color: var(--text2);
         }
+        .sidebar.collapsed .nav-btn { justify-content: center; padding: 10px 0; }
         .nav-btn:hover { background: var(--surface2); color: var(--text); }
         .nav-btn.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
-        .nav-icon { font-size: 15px; width: 20px; text-align: center; flex-shrink: 0; }
-        .nav-label { overflow: hidden; opacity: ${sidebarOpen ? 1 : 0}; max-width: ${sidebarOpen ? '130px' : '0px'}; transition: opacity 0.15s, max-width 0.22s; }
-        .nav-count { margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 20px; font-weight: 500; flex-shrink: 0; opacity: ${sidebarOpen ? 1 : 0}; transition: opacity 0.15s; }
+
+        .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; line-height: 1; }
+
+        .nav-label {
+          overflow: hidden; opacity: 1; max-width: 130px;
+          transition: opacity 0.15s, max-width 0.22s;
+        }
+        .sidebar.collapsed .nav-label { opacity: 0; max-width: 0; }
+
+        .nav-count {
+          margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 20px;
+          font-weight: 500; flex-shrink: 0; opacity: 1; transition: opacity 0.15s;
+        }
+        .sidebar.collapsed .nav-count { opacity: 0; width: 0; padding: 0; margin: 0; overflow: hidden; }
         .nav-btn.active .nav-count { background: var(--accent); color: white; }
         .nav-btn:not(.active) .nav-count { background: var(--surface2); color: var(--text3); }
+
         .nav-tooltip {
           display: none; position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
           background: var(--text); color: var(--bg); font-size: 12px; padding: 5px 10px; border-radius: 6px;
           white-space: nowrap; pointer-events: none; z-index: 200;
         }
-        .nav-btn:hover .nav-tooltip { display: ${sidebarOpen ? 'none' : 'block'}; }
-        .nav-divider { height: 1px; background: var(--border); margin: 6px ${sidebarOpen ? '12px' : '8px'}; }
-        .sidebar-bottom { padding: ${sidebarOpen ? '0.75rem' : '0.5rem'}; border-top: 1px solid var(--border); }
-        .sidebar-user { font-size: 12px; color: var(--text3); padding: 4px 12px 8px; white-space: nowrap; overflow: hidden; opacity: ${sidebarOpen ? 1 : 0}; transition: opacity 0.15s; }
+        .sidebar.collapsed .nav-btn:hover .nav-tooltip { display: block; }
+
+        .nav-divider { height: 1px; background: var(--border); margin: 6px 12px; }
+        .sidebar.collapsed .nav-divider { margin: 6px 8px; }
+
+        .sidebar-bottom { padding: 0.75rem; border-top: 1px solid var(--border); flex-shrink: 0; }
+        .sidebar.collapsed .sidebar-bottom { padding: 0.5rem; }
+
+        .sidebar-user {
+          font-size: 12px; color: var(--text3); padding: 4px 12px 8px;
+          white-space: nowrap; overflow: hidden; opacity: 1; transition: opacity 0.15s;
+        }
+        .sidebar.collapsed .sidebar-user { opacity: 0; height: 0; padding: 0; overflow: hidden; }
+
         .signout-btn {
           display: flex; align-items: center; gap: 10px;
-          padding: ${sidebarOpen ? '9px 12px' : '10px'}; justify-content: ${sidebarOpen ? 'flex-start' : 'center'};
+          padding: 9px 12px; justify-content: flex-start;
           border: none; background: none; color: var(--text3); font-size: 14px; cursor: pointer;
           width: 100%; font-family: 'DM Sans', sans-serif; border-radius: 10px; transition: background 0.15s;
           white-space: nowrap; position: relative;
         }
+        .sidebar.collapsed .signout-btn { justify-content: center; padding: 10px 0; }
         .signout-btn:hover { background: var(--surface2); color: var(--text); }
-        .signout-label { overflow: hidden; opacity: ${sidebarOpen ? 1 : 0}; max-width: ${sidebarOpen ? '130px' : '0px'}; transition: opacity 0.15s, max-width 0.22s; }
-        .signout-btn:hover .nav-tooltip { display: ${sidebarOpen ? 'none' : 'block'}; }
+
+        .signout-label {
+          overflow: hidden; opacity: 1; max-width: 130px;
+          transition: opacity 0.15s, max-width 0.22s;
+        }
+        .sidebar.collapsed .signout-label { opacity: 0; max-width: 0; }
+        .sidebar.collapsed .signout-btn:hover .nav-tooltip { display: block; }
 
         /* ── Mobile overlay ── */
         .mob-overlay { display: none; position: fixed; inset: 0; background: rgba(20,14,6,0.45); z-index: 19; }
@@ -368,8 +406,29 @@ export default function DashboardClient({ userName }: { userName: string }) {
         /* ── Responsive ── */
         @media (max-width: 768px) {
           .mob-bar { display: flex; }
-          .sidebar { top: 56px; }
+          .sidebar {
+            top: 56px;
+            width: 240px !important;
+            left: -240px;
+            transition: left 0.25s ease;
+            box-shadow: none;
+          }
+          .sidebar.mob-open {
+            left: 0;
+            box-shadow: 4px 0 24px rgba(20,14,6,0.15);
+          }
           .sidebar-top { display: none; }
+          .sidebar.collapsed { width: 240px !important; }
+          .sidebar.collapsed .nav-btn { justify-content: flex-start; padding: 9px 12px; }
+          .sidebar.collapsed .nav-label { opacity: 1; max-width: 130px; }
+          .sidebar.collapsed .nav-count { opacity: 1; width: auto; padding: 2px 7px; margin-left: auto; }
+          .sidebar.collapsed .sidebar-top { display: none; }
+          .sidebar.collapsed .logo-text { opacity: 1; flex: 1; width: auto; }
+          .sidebar.collapsed .sidebar-bottom { padding: 0.75rem; }
+          .sidebar.collapsed .sidebar-user { opacity: 1; height: auto; padding: 4px 12px 8px; }
+          .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 9px 12px; }
+          .sidebar.collapsed .signout-label { opacity: 1; max-width: 130px; }
+          .sidebar.collapsed .nav-divider { margin: 6px 12px; }
           .main { margin-left: 0 !important; max-width: 100% !important; padding: 5rem 1rem 4rem; }
           .add-btn.desktop { display: none !important; }
           .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -379,6 +438,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         }
         @media (min-width: 769px) {
           .add-btn.mobile { display: none !important; }
+          .mob-overlay { display: none !important; }
         }
         @media (max-width: 1100px) and (min-width: 769px) {
           .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -398,7 +458,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         {isMobile && sidebarOpen && <div className="mob-overlay on" onClick={() => setSidebarOpen(false)} />}
 
         {/* Sidebar */}
-        <nav className="sidebar">
+        <nav className={`sidebar${!sidebarOpen ? ' collapsed' : ''}${isMobile && sidebarOpen ? ' mob-open' : ''}`}>
           <div className="sidebar-top">
             {sidebarOpen && <div className="logo-text">my <em>reading</em><br />list</div>}
             <button className="toggle-btn" onClick={() => setSidebarOpen(o => !o)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
@@ -439,7 +499,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         </nav>
 
         {/* Main content */}
-        <main className="main" style={{ marginLeft: isMobile ? 0 : SW, maxWidth: isMobile ? '100%' : `calc(100% - ${SW}px)` }}>
+        <main className="main" style={{ marginLeft: isMobile ? 0 : SW, maxWidth: isMobile ? '100%' : `calc(100% - ${SW}px)`, transition: 'margin-left 0.22s ease, max-width 0.22s ease' }}>
 
           <div className="page-header">
             <div>
