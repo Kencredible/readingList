@@ -101,6 +101,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [saving, setSaving] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
+  const [isDark, setIsDark] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'default' | 'title' | 'rating' | 'duration'>('default')
   const [yearlyGoal, setYearlyGoal] = useState<number | null>(null)
@@ -122,6 +123,21 @@ export default function DashboardClient({ userName }: { userName: string }) {
     const stored = localStorage.getItem('readingGoal')
     if (stored) setYearlyGoal(parseInt(stored))
   }, [])
+
+  useEffect(() => {
+    const stored = localStorage.getItem('theme')
+    const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const dark = stored ? stored === 'dark' : systemDark
+    setIsDark(dark)
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+  }, [])
+
+  function toggleDark() {
+    const next = !isDark
+    setIsDark(next)
+    document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light')
+    localStorage.setItem('theme', next ? 'dark' : 'light')
+  }
 
   const fetchBooks = useCallback(async () => {
     setLoading(true)
@@ -493,7 +509,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .form-actions { flex-direction: column; }
           .btn-save, .btn-cancel { width: 100%; text-align: center; padding: 12px; }
           .page-header h2 { font-size: 22px; }
-          .book-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+          .book-grid { grid-template-columns: 1fr; gap: 8px; }
+          .book-card { flex-direction: row; gap: 12px; align-items: flex-start; }
+          .book-cover { width: 72px !important; min-width: 72px; padding-bottom: 0 !important; height: 104px !important; flex-shrink: 0; }
+          .book-btns { flex-direction: column; align-self: flex-start; margin-top: 0; }
           .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; font-size: 16px; }
           .year-pill { padding: 7px 14px; }
           .rand-card { padding: 12px 14px; gap: 10px; }
@@ -519,7 +538,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .rand-card { flex-wrap: wrap; }
           .rand-actions { width: 100%; }
           .btn-start, .btn-skip { flex: 1; text-align: center; }
-          .book-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
           .main { padding: 5rem 0.75rem 4rem; }
         }
       `}</style>
@@ -569,6 +587,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
           <div className="sidebar-bottom">
             {sidebarOpen && <div className="sidebar-user">Hi, {userName} 👋</div>}
+            <button onClick={toggleDark} className="signout-btn" title={isDark ? 'Light mode' : 'Dark mode'}>
+              <span className="nav-icon">{isDark ? '☀️' : '🌙'}</span>
+              <span className="signout-label">{isDark ? 'Light mode' : 'Dark mode'}</span>
+              <span className="nav-tooltip">{isDark ? 'Light mode' : 'Dark mode'}</span>
+            </button>
             <button onClick={logout} className="signout-btn" title="Sign out">
               <span className="nav-icon" style={{ fontSize: 14 }}>↩</span>
               <span className="signout-label">Sign out</span>
