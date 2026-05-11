@@ -433,8 +433,8 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .book-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
         .book-cover-fb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
         .book-badge { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 20px; }
-        .book-title { font-family: 'Lora', serif; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
-        .book-author { font-size: 12px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .book-title { font-family: 'Lora', serif; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); max-width: 100%; }
+        .book-author { font-size: 12px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
         .book-meta { font-size: 11px; color: var(--text3); margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
         .genre-pill { background: var(--surface2); color: var(--text2); font-size: 10px; padding: 1px 7px; border-radius: 20px; }
         .book-btns { display: flex; gap: 4px; justify-content: flex-end; margin-top: auto; }
@@ -499,7 +499,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 9px 12px; }
           .sidebar.collapsed .signout-label { opacity: 1; max-width: 130px; }
           .sidebar.collapsed .nav-divider { margin: 6px 12px; }
-          .main { margin-left: 0 !important; max-width: 100% !important; padding: 5rem 1rem 4rem; }
+          .main { margin-left: 0 !important; max-width: 100% !important; padding: 5rem 1rem 4rem; overflow-x: hidden; }
           .add-btn.desktop { display: none !important; }
           .stats-row { grid-template-columns: repeat(2, 1fr); }
           .stat-val { font-size: 22px; }
@@ -510,9 +510,12 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .btn-save, .btn-cancel { width: 100%; text-align: center; padding: 12px; }
           .page-header h2 { font-size: 22px; }
           .book-grid { grid-template-columns: 1fr; gap: 8px; }
-          .book-card { flex-direction: row; gap: 12px; align-items: flex-start; }
+          .book-card { flex-direction: row; gap: 12px; align-items: flex-start; overflow: hidden; min-width: 0; max-width: 100%; }
           .book-cover { width: 72px !important; min-width: 72px; padding-bottom: 0 !important; height: 104px !important; flex-shrink: 0; }
-          .book-btns { flex-direction: column; align-self: flex-start; margin-top: 0; }
+          .book-btns { flex-direction: column; align-self: flex-start; margin-top: 0; flex-shrink: 0; }
+          .inline-form { max-width: 100%; box-sizing: border-box; overflow: hidden; }
+          .inline-form .form-grid { max-width: 100%; }
+          .inline-form .input { max-width: 100%; box-sizing: border-box; }
           .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; font-size: 16px; }
           .year-pill { padding: 7px 14px; }
           .rand-card { padding: 12px 14px; gap: 10px; }
