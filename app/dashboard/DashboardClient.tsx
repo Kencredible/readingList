@@ -356,6 +356,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .rand-card { background: var(--surface); border: 1.5px solid rgba(193,123,42,0.35); border-radius: 16px; padding: 16px 20px; display: flex; align-items: center; gap: 14px; box-shadow: 0 8px 32px rgba(40,28,10,0.12); margin-bottom: 1.75rem; flex-wrap: wrap; }
         .btn-start { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
         .btn-skip { background: none; color: var(--text3); border: 1px solid var(--border2); border-radius: 10px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .rand-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 
         /* ── Forms ── */
         .form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 8px 32px rgba(40,28,10,0.12); animation: slideDown 0.2s ease; }
@@ -432,9 +433,19 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .main { margin-left: 0 !important; max-width: 100% !important; padding: 5rem 1rem 4rem; }
           .add-btn.desktop { display: none !important; }
           .stats-row { grid-template-columns: repeat(2, 1fr); }
+          .stat-val { font-size: 22px; }
+          .stat-card { padding: 14px; }
           .form-grid { grid-template-columns: 1fr; }
           .form-group.full { grid-column: 1; }
+          .form-actions { flex-direction: column; }
+          .btn-save, .btn-cancel { width: 100%; text-align: center; padding: 12px; }
           .page-header h2 { font-size: 22px; }
+          .book-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+          .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; font-size: 16px; }
+          .year-pill { padding: 7px 14px; }
+          .rand-card { padding: 12px 14px; gap: 10px; }
+          .nav-btn { min-height: 44px; }
+          .signout-btn { min-height: 44px; }
         }
         @media (min-width: 769px) {
           .add-btn.mobile { display: none !important; }
@@ -442,6 +453,17 @@ export default function DashboardClient({ userName }: { userName: string }) {
         }
         @media (max-width: 1100px) and (min-width: 769px) {
           .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 400px) {
+          .stats-row { grid-template-columns: 1fr 1fr; }
+          .stat-val { font-size: 20px; }
+          .stat-lbl { font-size: 11px; }
+          .stat-s { font-size: 11px; }
+          .rand-card { flex-wrap: wrap; }
+          .rand-actions { width: 100%; }
+          .btn-start, .btn-skip { flex: 1; text-align: center; }
+          .book-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .main { padding: 5rem 0.75rem 4rem; }
         }
       `}</style>
 
@@ -549,7 +571,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 <div style={{ fontFamily: 'Lora, serif', fontSize: 16, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{suggestedBook.title}</div>
                 <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 2 }}>{suggestedBook.author}{suggestedBook.genre ? ` · ${suggestedBook.genre}` : ''}</div>
               </div>
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+              <div className="rand-actions">
                 <button onClick={startSuggested} className="btn-start">📖 Start reading</button>
                 <button onClick={skipSuggestion} className="btn-skip">Skip</button>
               </div>
