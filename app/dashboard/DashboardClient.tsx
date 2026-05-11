@@ -120,9 +120,31 @@ export default function DashboardClient({ userName }: { userName: string }) {
   }, [])
 
   useEffect(() => {
-    const stored = localStorage.getItem('readingGoal')
-    if (stored) setYearlyGoal(parseInt(stored))
+    // Show cached value instantly while the API call is in flight
+    const cached = localStorage.getItem('readingGoal')
+    if (cached) setYearlyGoal(parseInt(cached))
+
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => {
+        const goal = data.yearly_goal ?? null
+        setYearlyGoal(goal)
+        if (goal) localStorage.setItem('readingGoal', String(goal))
+        else localStorage.removeItem('readingGoal')
+      })
+      .catch(() => {})
   }, [])
+
+  async function saveGoal(n: number) {
+    setYearlyGoal(n)
+    setEditingGoal(false)
+    localStorage.setItem('readingGoal', String(n))
+    await fetch('/api/settings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ yearly_goal: n }),
+    })
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem('theme')
@@ -656,9 +678,9 @@ export default function DashboardClient({ userName }: { userName: string }) {
                   className="input goal-input" type="number" min="1" max="365"
                   value={goalInput} onChange={e => setGoalInput(e.target.value)}
                   placeholder="e.g. 24" autoFocus
-                  onKeyDown={e => { if (e.key === 'Enter') { const n = parseInt(goalInput); if (n > 0) { setYearlyGoal(n); localStorage.setItem('readingGoal', String(n)) } setEditingGoal(false) } if (e.key === 'Escape') setEditingGoal(false) }}
+                  onKeyDown={e => { if (e.key === 'Enter') { const n = parseInt(goalInput); if (n > 0) saveGoal(n); else setEditingGoal(false) } if (e.key === 'Escape') setEditingGoal(false) }}
                 />
-                <button className="btn-save" style={{ padding: '9px 16px' }} onClick={() => { const n = parseInt(goalInput); if (n > 0) { setYearlyGoal(n); localStorage.setItem('readingGoal', String(n)) } setEditingGoal(false) }}>Set</button>
+                <button className="btn-save" style={{ padding: '9px 16px' }} onClick={() => { const n = parseInt(goalInput); if (n > 0) saveGoal(n); else setEditingGoal(false) }}>Set</button>
                 <button className="btn-cancel" onClick={() => setEditingGoal(false)}>Cancel</button>
               </div>
             ) : (

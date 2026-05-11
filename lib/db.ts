@@ -32,6 +32,9 @@ export async function setupDb() {
   await sql`
     ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_url TEXT
   `
+  await sql`
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS yearly_goal INTEGER
+  `
 }
 
 export async function fetchCoverUrl(title: string, author: string): Promise<string | null> {
