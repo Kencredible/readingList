@@ -773,7 +773,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                       <div className="hof-ov">
                         <div style={{ fontFamily: 'Lora, serif', fontSize: 13, fontWeight: 600, color: 'white', lineHeight: 1.3 }}>{b.title}</div>
                         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>{b.author}</div>
-                        {days && <div style={{ marginTop: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: 'white', fontWeight: 500 }}>{days} day{days !== 1 ? 's' : ''} to read</div>}
+                        {days && <div style={{ marginTop: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: 'white', fontWeight: 500 }}>Read in {days} day{days !== 1 ? 's' : ''}</div>}
                         <div style={{ color: '#F5C842', fontSize: 14, marginTop: 2 }}>★★★★★</div>
                       </div>
                     </div>
