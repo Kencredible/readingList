@@ -101,6 +101,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [saving, setSaving] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [isMobile, setIsMobile] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [sortBy, setSortBy] = useState<'default' | 'title' | 'rating' | 'duration'>('default')
+  const [yearlyGoal, setYearlyGoal] = useState<number | null>(null)
+  const [editingGoal, setEditingGoal] = useState(false)
+  const [goalInput, setGoalInput] = useState('')
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -111,6 +116,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
     handler(mq)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  useEffect(() => {
+    const stored = localStorage.getItem('readingGoal')
+    if (stored) setYearlyGoal(parseInt(stored))
   }, [])
 
   const fetchBooks = useCallback(async () => {
@@ -179,7 +189,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
   }
 
   function switchTab(t: Tab) {
-    setTab(t); setSelectedYear(null)
+    setTab(t); setSelectedYear(null); setSearchQuery('')
     if (isMobile) setSidebarOpen(false)
   }
 
@@ -195,6 +205,29 @@ export default function DashboardClient({ userName }: { userName: string }) {
   let displayed      = tab === 'all' ? books : books.filter(b => b.status === tab)
   if (tab === 'read' && selectedYear) displayed = displayed.filter(b => b.start_date?.slice(0, 4) === selectedYear)
   const suggestedBook = suggestedId ? books.find(b => b.id === suggestedId) : null
+
+  const currentYear = new Date().getFullYear()
+  const booksReadThisYear = readBooks.filter(b =>
+    b.end_date?.startsWith(String(currentYear)) ||
+    (!b.end_date && b.start_date?.startsWith(String(currentYear)))
+  ).length
+  const goalPct = yearlyGoal ? Math.min(100, Math.round((booksReadThisYear / yearlyGoal) * 100)) : 0
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase()
+    displayed = displayed.filter(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q))
+  }
+  if (sortBy === 'title') displayed = [...displayed].sort((a, b) => a.title.localeCompare(b.title))
+  else if (sortBy === 'rating') displayed = [...displayed].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+  else if (sortBy === 'duration') displayed = [...displayed].sort((a, b) => {
+    const da = a.start_date && a.end_date ? daysBetween(a.start_date, a.end_date) : Infinity
+    const db = b.start_date && b.end_date ? daysBetween(b.start_date, b.end_date) : Infinity
+    return da - db
+  })
+
+  const filteredHofBooks = searchQuery.trim()
+    ? hofBooks.filter(b => b.title.toLowerCase().includes(searchQuery.toLowerCase()) || b.author.toLowerCase().includes(searchQuery.toLowerCase()))
+    : hofBooks
 
   const TAB_LABELS: Record<Tab, [string, string]> = {
     all:     ['All books',    'Your complete reading collection'],
@@ -404,6 +437,26 @@ export default function DashboardClient({ userName }: { userName: string }) {
         /* ── Empty / loading ── */
         .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); }
 
+        /* ── Search & sort ── */
+        .search-sort-bar { display: flex; gap: 10px; margin-bottom: 1.25rem; align-items: center; }
+        .search-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 14px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+        .search-input:focus { border-color: var(--accent); }
+        .search-input::placeholder { color: var(--text3); }
+        .sort-select { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 13px; color: var(--text2); font-family: 'DM Sans', sans-serif; outline: none; cursor: pointer; flex-shrink: 0; }
+
+        /* ── Reading goal ── */
+        .goal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 20px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 12px rgba(40,28,10,0.08); flex-wrap: wrap; }
+        .goal-info { flex: 1; min-width: 0; }
+        .goal-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); font-weight: 500; margin-bottom: 8px; }
+        .goal-bar-wrap { background: var(--surface2); border-radius: 20px; height: 8px; overflow: hidden; margin-bottom: 6px; }
+        .goal-bar-fill { height: 100%; background: var(--accent); border-radius: 20px; transition: width 0.5s ease; }
+        .goal-label { font-size: 13px; color: var(--text2); }
+        .goal-complete { color: var(--accent); font-weight: 600; }
+        .goal-edit-btn { background: none; border: 1px solid var(--border2); border-radius: 8px; padding: 7px 14px; font-size: 13px; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; flex-shrink: 0; transition: background 0.15s; }
+        .goal-edit-btn:hover { background: var(--surface2); }
+        .goal-edit { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+        .goal-input { width: 80px !important; text-align: center; }
+
         /* ── Responsive ── */
         @media (max-width: 768px) {
           .mob-bar { display: flex; }
@@ -446,6 +499,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .rand-card { padding: 12px 14px; gap: 10px; }
           .nav-btn { min-height: 44px; }
           .signout-btn { min-height: 44px; }
+          .search-sort-bar { flex-wrap: wrap; }
+          .sort-select { width: 100%; }
+          .goal-card { gap: 12px; }
+          .goal-edit { width: 100%; }
         }
         @media (min-width: 769px) {
           .add-btn.mobile { display: none !important; }
@@ -547,6 +604,44 @@ export default function DashboardClient({ userName }: { userName: string }) {
             ))}
           </div>
 
+          {/* Reading goal */}
+          <div className="goal-card">
+            <div className="goal-info">
+              <div className="goal-title">📖 {currentYear} Reading Goal</div>
+              {yearlyGoal ? (
+                <>
+                  <div className="goal-bar-wrap">
+                    <div className="goal-bar-fill" style={{ width: `${goalPct}%` }} />
+                  </div>
+                  <div className="goal-label">
+                    {goalPct >= 100
+                      ? <span className="goal-complete">🎉 Goal complete! {booksReadThisYear} of {yearlyGoal} books</span>
+                      : <>{booksReadThisYear} of {yearlyGoal} books — {goalPct}%</>
+                    }
+                  </div>
+                </>
+              ) : (
+                <div className="goal-label" style={{ color: 'var(--text3)' }}>No goal set for this year</div>
+              )}
+            </div>
+            {editingGoal ? (
+              <div className="goal-edit">
+                <input
+                  className="input goal-input" type="number" min="1" max="365"
+                  value={goalInput} onChange={e => setGoalInput(e.target.value)}
+                  placeholder="e.g. 24" autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') { const n = parseInt(goalInput); if (n > 0) { setYearlyGoal(n); localStorage.setItem('readingGoal', String(n)) } setEditingGoal(false) } if (e.key === 'Escape') setEditingGoal(false) }}
+                />
+                <button className="btn-save" style={{ padding: '9px 16px' }} onClick={() => { const n = parseInt(goalInput); if (n > 0) { setYearlyGoal(n); localStorage.setItem('readingGoal', String(n)) } setEditingGoal(false) }}>Set</button>
+                <button className="btn-cancel" onClick={() => setEditingGoal(false)}>Cancel</button>
+              </div>
+            ) : (
+              <button className="goal-edit-btn" onClick={() => { setGoalInput(String(yearlyGoal || '')); setEditingGoal(true) }}>
+                {yearlyGoal ? 'Edit goal' : 'Set goal'}
+              </button>
+            )}
+          </div>
+
           {/* Year filter */}
           {tab === 'read' && years.length >= 2 && (
             <div className="year-bar">
@@ -585,17 +680,41 @@ export default function DashboardClient({ userName }: { userName: string }) {
             </div>
           )}
 
+          {/* Search & sort */}
+          <div className="search-sort-bar">
+            <input
+              className="search-input"
+              placeholder="Search by title or author…"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {tab !== 'hof' && (
+              <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}>
+                <option value="default">Sort: Default</option>
+                <option value="title">Title A–Z</option>
+                <option value="rating">Rating ↓</option>
+                <option value="duration">Reading time ↑</option>
+              </select>
+            )}
+          </div>
+
           {/* Hall of Fame */}
           {tab === 'hof' && (
-            hofBooks.length === 0 ? (
+            filteredHofBooks.length === 0 ? (
               <div className="empty">
                 <div style={{ fontSize: 48, marginBottom: 16 }}>🏆</div>
-                <p style={{ fontSize: 16, fontFamily: 'Lora, serif', fontWeight: 600, color: 'var(--text2)' }}>No 5-star books yet</p>
-                <p style={{ fontSize: 14, marginTop: 8 }}>Rate a finished book 5 stars and it will appear here</p>
+                {searchQuery ? (
+                  <p style={{ fontSize: 16, fontFamily: 'Lora, serif', fontWeight: 600, color: 'var(--text2)' }}>No matches for &ldquo;{searchQuery}&rdquo;</p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 16, fontFamily: 'Lora, serif', fontWeight: 600, color: 'var(--text2)' }}>No 5-star books yet</p>
+                    <p style={{ fontSize: 14, marginTop: 8 }}>Rate a finished book 5 stars and it will appear here</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="hof-grid">
-                {hofBooks.map(b => {
+                {filteredHofBooks.map(b => {
                   const days = b.start_date && b.end_date ? daysBetween(b.start_date, b.end_date) : null
                   return (
                     <div key={b.id} className="hof-cover">
@@ -622,7 +741,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
             : displayed.length === 0 ? (
               <div className="empty">
                 <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>📭</div>
-                <p>{selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
+                <p>{searchQuery ? `No results for "${searchQuery}"` : selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
               </div>
             ) : (() => {
               const groups: [string, Book[]][] = tab === 'all'
