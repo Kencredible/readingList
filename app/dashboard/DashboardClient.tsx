@@ -106,6 +106,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
+  const [openRequest, setOpenRequest] = useState<{ id: number; nonce: number } | null>(null)
   const [view, setView] = useState<View>('carousel')
   const [flight, setFlight] = useState<{ key: number; to: View; from: ReturnType<typeof measureBooks> } | null>(null)
   const viewRootRef = useRef<HTMLDivElement>(null)
@@ -184,7 +185,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
     }
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return }
 
-    const vt = (document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } }).startViewTransition
+    const vt = (document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void>; finished: Promise<void> } }).startViewTransition
     if (!vt) {
       // No View Transitions: cross-fade every colour instead
       root.classList.add('theme-fade')
@@ -192,17 +193,24 @@ export default function DashboardClient({ userName }: { userName: string }) {
       window.setTimeout(() => root.classList.remove('theme-fade'), 450)
       return
     }
-    // New theme spreads out in a circle from the button that was clicked
+    // Light → dark: the dark theme spreads out in a circle from the button.
+    // Dark → light: the exact reverse — the dark theme shrinks back into the button, uncovering light.
     const r = e?.currentTarget.getBoundingClientRect()
     const x = r ? r.left + r.width / 2 : window.innerWidth / 2
     const y = r ? r.top + r.height / 2 : window.innerHeight / 2
     const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
-    vt.call(document, apply).ready.then(() => {
+    const small = `circle(0px at ${x}px ${y}px)`, full = `circle(${radius}px at ${x}px ${y}px)`
+    if (!next) root.classList.add('theme-reverse')   // keeps the old (dark) snapshot on top so it can shrink away
+    const t = vt.call(document, apply)
+    t.ready.then(() => {
       root.animate(
-        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
-        { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' },
+        { clipPath: next ? [small, full] : [full, small] },
+        next
+          ? { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' }
+          : { duration: 600, easing: 'cubic-bezier(0.8, 0, 0.6, 1)', pseudoElement: '::view-transition-old(root)' },   // mirrored easing
       )
     }).catch(() => {})
+    t.finished.finally(() => root.classList.remove('theme-reverse'))
   }
 
   const fetchBooks = useCallback(async () => {
@@ -847,7 +855,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
                   value={searchQuery}
                   tabIndex={searchOpen ? 0 : -1}
                   onChange={e => setSearchQuery(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeSearch() } }}
+                  onKeyDown={e => {
+                    if (e.key === 'Escape') { e.preventDefault(); closeSearch() }
+                    // Enter acts like clicking the highlighted book: open it
+                    if (e.key === 'Enter' && view === 'carousel' && seekBook) { e.preventDefault(); setOpenRequest({ id: seekBook.id, nonce: Date.now() }) }
+                  }}
                   onFocus={() => setSearchOpen(true)}
                   onBlur={() => { if (!searchQuery.trim()) setSearchOpen(false) }}
                 />
@@ -934,6 +946,8 @@ export default function DashboardClient({ userName }: { userName: string }) {
                     <BookCarousel
                       books={carouselBooks}
                       seekId={seekBook?.id ?? null}
+                      openRequest={openRequest}
+                      backdrop={selectedYear ?? TAB_LABELS[tab][0]}
                       startId={lastCarouselId.current}
                       settleDelay={flight ? 1250 : 450}
                       onSettle={id => { lastCarouselId.current = id }}

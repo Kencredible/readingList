@@ -10,6 +10,7 @@ const GAP      = 14    // space between neighbouring spines
 const MIN_R    = 380   // smallest ring radius, so a handful of books still forms an arc
 const FRICTION = 0.92  // per-frame velocity decay while gliding
 const PULL     = 170   // how far the opened book slides out of the ring
+const STAGGER  = 85    // ms between books fading out/in on a page switch, front first
 const RAISE    = 34    // how far the settled book's spine lifts before it is opened
 const INFO_GAP = 40    // space between the open cover and its floating details
 
@@ -30,8 +31,10 @@ function lastName(author: string) {
   return parts[parts.length - 1]
 }
 
-export default function BookCarousel({ books: incoming, seekId, startId, settleDelay = 450, onSettle, onEdit, onDelete }: {
+export default function BookCarousel({ books: incoming, seekId, openRequest, backdrop, startId, settleDelay = 450, onSettle, onEdit, onDelete }: {
   books: Book[]
+  openRequest?: { id: number; nonce: number } | null   // open this book (spinning to it first if needed), e.g. Enter in search
+  backdrop?: string        // big faint label behind the ring (page name or year)
   seekId?: number | null   // spin to this book when it changes (driven by the search box)
   startId?: number | null  // book to face front on mount (e.g. coming back from the grid)
   settleDelay?: number     // wait before the first spine lift, so a view transition can land first
@@ -46,10 +49,11 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
   // Switching pages: books that drop out float up and fade, the rest glide into the new ring,
   // and books that join drop down into place. `books` is the list currently on the ring.
   const [books, setBooks] = useState(incoming)
-  const [motion, setMotion] = useState<Record<number, 'leave' | 'pre' | 'arrive'>>({})
+  const [motion, setMotion] = useState<Record<number, { phase: 'leave' | 'pre' | 'arrive'; delay: number }>>({})
   const [gliding, setGliding] = useState(false)
   const shownKeyRef = useRef(incoming.map(b => b.id).join(','))
   const transitionTimers = useRef<number[]>([])
+  const glideMsRef = useRef(900)   // how long the current page-switch glide/cascade runs
   const renderedRef = useRef<Set<number>>(new Set())   // books drawn last frame, to fade in ones that appear mid-glide
 
   const wrapRef   = useRef<HTMLDivElement>(null)
@@ -60,6 +64,7 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
   const rafRef    = useRef<number | null>(null)
   const settleRef = useRef<number | undefined>(undefined)
   const lastIdxRef = useRef(0)
+  const pendingOpenRef = useRef<number | null>(null)
   const dragRef   = useRef<{ x: number; rot: number; lastX: number; lastT: number; v: number; moved: boolean; idx: number | null } | null>(null)
 
   const wide   = width >= 700                     // details float beside the open book rather than below the ring
@@ -114,7 +119,8 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
       lastIdxRef.current = idx
       setActiveId(books[idx].id)
       onSettleRef.current?.(books[idx].id)
-      if (books.length === 1) setOpened(true)
+      if (books.length === 1 || pendingOpenRef.current === books[idx].id) setOpened(true)
+      pendingOpenRef.current = null
     }, delay)
   }, [indexAt])
 
@@ -180,24 +186,32 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
     const fromFront = (i: number, st: number) => Math.abs(norm(i * st - rotRef.current))
     // Only books near the front need to animate out; the rest are off-stage anyway
     const leaving = books.map((b, i) => ({ b, d: fromFront(i, curStep) })).filter(x => !nextIds.has(x.b.id) && x.d < 100).sort((a, b) => a.d - b.d)
-    const entering = incoming.filter(b => !prevIds.has(b.id))
+    // Arrivals cascade outward from wherever the front of the new ring will be
+    let frontIdx = incoming.findIndex(b => b.id === prevActive.current)
+    if (frontIdx < 0) frontIdx = Math.min(lastIdxRef.current, incoming.length - 1)
+    const entering = incoming.map((b, i) => ({ b, d: Math.abs(i - frontIdx) })).filter(x => !prevIds.has(x.b.id)).sort((a, b) => a.d - b.d)
+    const delayFor = (rank: number) => Math.min(rank, 12) * STAGGER
+    const lastArrive = entering.length ? delayFor(entering.length - 1) : 0
+    const lastLeave = leaving.length ? delayFor(leaving.length - 1) : 0
 
     const commit = () => {
       window.clearTimeout(settleRef.current)
+      glideMsRef.current = Math.max(850, lastArrive + 750)
       setGliding(true)
-      setMotion(Object.fromEntries(entering.map(b => [b.id, 'pre'])))   // start above the ring, invisible
+      // start above the ring, invisible
+      setMotion(Object.fromEntries(entering.map((x, r) => [x.b.id, { phase: 'pre' as const, delay: delayFor(r) }])))
       setBooks(incoming)
       requestAnimationFrame(() => requestAnimationFrame(() =>
-        setMotion(Object.fromEntries(entering.map(b => [b.id, 'arrive'])))))
-      later(() => { setGliding(false); setMotion({}); transitionTimers.current = [] }, 1150)
+        setMotion(Object.fromEntries(entering.map((x, r) => [x.b.id, { phase: 'arrive' as const, delay: delayFor(r) }])))))
+      later(() => { setGliding(false); setMotion({}); transitionTimers.current = [] }, glideMsRef.current)
     }
 
     if (leaving.length) {
       window.clearTimeout(settleRef.current)
       setActiveId(null)
       setOpened(false)
-      setMotion(Object.fromEntries(leaving.map(x => [x.b.id, 'leave'])))
-      later(commit, 380 + Math.min(leaving.length, 10) * 28)
+      setMotion(Object.fromEntries(leaving.map((x, r) => [x.b.id, { phase: 'leave' as const, delay: delayFor(r) }])))
+      later(commit, lastLeave + 480)   // wait for the last one to finish floating away
     } else {
       commit()
     }
@@ -221,9 +235,29 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
     setRot(rotRef.current)
     setActiveId(null)
     setOpened(false)
-    settle(n === 1 ? 0 : glidingRef.current ? 900 : settleDelay)
+    settle(n === 1 ? 0 : glidingRef.current ? glideMsRef.current : settleDelay)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey])
+
+  useEffect(() => {
+    if (!openRequest) return
+    const idx = books.findIndex(b => b.id === openRequest.id)
+    if (idx < 0) return
+    if (activeId === openRequest.id) { setOpened(true); return }
+    pendingOpenRef.current = openRequest.id   // open it as soon as the ring settles there
+    goTo(idx)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest?.nonce])
+
+  // Backdrop label: the old one drifts up and out while the new one rises in
+  const [label, setLabel] = useState<{ cur?: string; prev?: string; key: number }>({ cur: backdrop, key: 0 })
+  useEffect(() => {
+    if (backdrop === label.cur) return
+    setLabel(l => ({ cur: backdrop, prev: l.cur, key: l.key + 1 }))
+    const t = window.setTimeout(() => setLabel(l => ({ ...l, prev: undefined })), 700)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [backdrop])
 
   useEffect(() => {
     if (seekId == null) return
@@ -248,6 +282,7 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       if (live.current.books.length === 1) return   // nothing to spin; let the page scroll
+      pendingOpenRef.current = null
       e.preventDefault()
       const { step } = live.current
       const d  = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY
@@ -263,6 +298,7 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
 
   function onPointerDown(e: React.PointerEvent) {
     if (e.button !== 0 || single) return
+    pendingOpenRef.current = null
     const hit = (e.target as HTMLElement).closest('[data-index]')
     if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     velRef.current = 0
@@ -340,6 +376,19 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
           background: radial-gradient(ellipse 70% 55% at 50% 100%, var(--surface2), transparent 70%);
         }
         .bc-stage:active { cursor: grabbing; }
+        /* Giant faint page label behind the ring. Decorative only; it fades out while a book's details are showing */
+        .bc-backdrop { position: absolute; inset: 0; pointer-events: none; overflow: hidden; transition: opacity 0.45s ease; }
+        .bc-stage.is-open .bc-backdrop { opacity: 0; }
+        .bc-backdrop-text {
+          /* Serif to match the bookish headings; the narrow measure wraps longer names ("Want to read") onto two lines */
+          position: absolute; left: 0.04em; top: 0.02em; max-width: 5.2em; line-height: 0.92; text-wrap: balance;
+          font-family: 'Lora', serif; font-weight: 600; letter-spacing: -0.025em;
+          color: color-mix(in srgb, var(--text) 9%, transparent);
+          animation: bcLabelIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        .bc-backdrop-text.out { animation: bcLabelOut 0.45s cubic-bezier(0.4, 0, 1, 1) both; }
+        @keyframes bcLabelIn  { from { opacity: 0; transform: translateY(0.18em); } to { opacity: 1; transform: none; } }
+        @keyframes bcLabelOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-0.18em); } }
         .bc-stage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
         .bc-floor {
           position: absolute; left: 50%; bottom: 6%; width: 78%; height: 40px; transform: translateX(-50%);
@@ -472,6 +521,7 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
 
         @media (prefers-reduced-motion: reduce) {
           .bc-book, .bc-scene.gliding, .bc-book.leave, .bc-book.arrive { transition-duration: 0.01s !important; transition-delay: 0s !important; }
+          .bc-backdrop-text { animation-duration: 0.01s !important; }
           .bc-info, .bc-star { animation-duration: 0.01s; animation-delay: 0s; }
         }
       `}</style>
@@ -490,6 +540,12 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
         onPointerCancel={onPointerUp}
         onKeyDown={onKeyDown}
       >
+        {backdrop && (
+          <div className="bc-backdrop" aria-hidden>
+            {label.prev && <span key={`p${label.key}`} className="bc-backdrop-text out" style={{ fontSize: Math.round(Math.min((maxH + 190 * k) * 0.3, stageW / 5.6)) }}>{label.prev}</span>}
+            {label.cur && <span key={`c${label.key}`} className="bc-backdrop-text" style={{ fontSize: Math.round(Math.min((maxH + 190 * k) * 0.3, stageW / 5.6)) }}>{label.cur}</span>}
+          </div>
+        )}
         <div className="bc-floor" />
         {!single && <div className="bc-marker" />}
         <div className={`bc-scene${active && opened ? ' focus' : ''}${gliding ? ' gliding' : ''}`} style={{ transform: `translateZ(${-radius}px) rotateY(${-rot}deg)` }}>
@@ -502,14 +558,14 @@ export default function BookCarousel({ books: incoming, seekId, startId, settleD
             const isNear = i === nearIdx && !open
             // With details floating beside an open book, nothing may sit behind them (keeps their text at full contrast)
             const behindInfo = opened && wide && !on && x + spineW > infoLeft - stageW / 2 - 12
-            const phase = motion[b.id]
+            const phase = motion[b.id]?.phase
             const wasDrawn = renderedRef.current.has(b.id)
             // Mid-glide, keep drawing books that were on stage so they slide (and fade) out rather than vanish
             const onStage = Math.abs(rel) <= 96 && Math.abs(x) <= stageW / 2 + spineW * 2
             if (!on && !phase && !onStage && !(gliding && wasDrawn)) return null
             const appear = gliding && !wasDrawn && !phase
             const up = phase === 'leave' || phase === 'pre' ? -70 * k : 0
-            const delay = phase ? Math.min(Math.round(Math.abs(rel) / Math.max(step, 1)), 10) * 40 : 0
+            const delay = motion[b.id]?.delay ?? 0
 
             const h     = maxH * (0.86 + (hashOf(b.author + b.title) % 15) / 100)
             const color = colorFor(b.title)

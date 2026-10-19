@@ -44,6 +44,9 @@ body {
 
 /* Theme switch: the new theme is revealed by a clip-path circle (see toggleDark), so skip the default cross-fade */
 ::view-transition-old(root), ::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+/* Dark → light plays the reveal in reverse, so the outgoing snapshot has to sit on top */
+html.theme-reverse::view-transition-old(root) { z-index: 2; }
+html.theme-reverse::view-transition-new(root) { z-index: 1; }
 /* Fallback where View Transitions aren't supported: cross-fade every colour */
 html.theme-fade, html.theme-fade *, html.theme-fade *::before, html.theme-fade *::after {
   transition: background-color 0.4s ease, color 0.4s ease, border-color 0.4s ease, fill 0.4s ease, box-shadow 0.4s ease !important;
