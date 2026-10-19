@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import { Book, colorFor, daysBetween, hashOf } from './bookUtils'
 
 // Base dimensions (px) — scaled down on narrow screens
@@ -30,7 +30,7 @@ function lastName(author: string) {
   return parts[parts.length - 1]
 }
 
-export default function BookCarousel({ books, seekId, startId, settleDelay = 450, onSettle, onEdit, onDelete }: {
+export default function BookCarousel({ books: incoming, seekId, startId, settleDelay = 450, onSettle, onEdit, onDelete }: {
   books: Book[]
   seekId?: number | null   // spin to this book when it changes (driven by the search box)
   startId?: number | null  // book to face front on mount (e.g. coming back from the grid)
@@ -43,6 +43,14 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
   const [activeId, setActiveId] = useState<number | null>(null)   // settled on: spine raised
   const [opened, setOpened] = useState(false)                       // clicked: turned to show its cover
   const [width, setWidth] = useState(900)
+  // Switching pages: books that drop out float up and fade, the rest glide into the new ring,
+  // and books that join drop down into place. `books` is the list currently on the ring.
+  const [books, setBooks] = useState(incoming)
+  const [motion, setMotion] = useState<Record<number, 'leave' | 'pre' | 'arrive'>>({})
+  const [gliding, setGliding] = useState(false)
+  const shownKeyRef = useRef(incoming.map(b => b.id).join(','))
+  const transitionTimers = useRef<number[]>([])
+  const renderedRef = useRef<Set<number>>(new Set())   // books drawn last frame, to fade in ones that appear mid-glide
 
   const wrapRef   = useRef<HTMLDivElement>(null)
   const stageRef  = useRef<HTMLDivElement>(null)
@@ -148,6 +156,54 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
     kick()
   }, [kick])
 
+  const glidingRef = useRef(false)
+  glidingRef.current = gliding
+
+  // New list from the parent: same books → just refresh their details; different books → animate the change
+  useEffect(() => {
+    const key = incoming.map(b => b.id).join(',')
+    if (key === shownKeyRef.current) {
+      if (!transitionTimers.current.length) setBooks(incoming)
+      return
+    }
+    shownKeyRef.current = key
+    transitionTimers.current.forEach(t => window.clearTimeout(t))
+    transitionTimers.current = []
+    const later = (fn: () => void, ms: number) => { transitionTimers.current.push(window.setTimeout(fn, ms)) }
+
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reduce || !books.length || !incoming.length) { setBooks(incoming); setMotion({}); setGliding(false); return }
+
+    const nextIds = new Set(incoming.map(b => b.id))
+    const prevIds = new Set(books.map(b => b.id))
+    const { step: curStep } = live.current
+    const fromFront = (i: number, st: number) => Math.abs(norm(i * st - rotRef.current))
+    // Only books near the front need to animate out; the rest are off-stage anyway
+    const leaving = books.map((b, i) => ({ b, d: fromFront(i, curStep) })).filter(x => !nextIds.has(x.b.id) && x.d < 100).sort((a, b) => a.d - b.d)
+    const entering = incoming.filter(b => !prevIds.has(b.id))
+
+    const commit = () => {
+      window.clearTimeout(settleRef.current)
+      setGliding(true)
+      setMotion(Object.fromEntries(entering.map(b => [b.id, 'pre'])))   // start above the ring, invisible
+      setBooks(incoming)
+      requestAnimationFrame(() => requestAnimationFrame(() =>
+        setMotion(Object.fromEntries(entering.map(b => [b.id, 'arrive'])))))
+      later(() => { setGliding(false); setMotion({}); transitionTimers.current = [] }, 1150)
+    }
+
+    if (leaving.length) {
+      window.clearTimeout(settleRef.current)
+      setActiveId(null)
+      setOpened(false)
+      setMotion(Object.fromEntries(leaving.map(x => [x.b.id, 'leave'])))
+      later(commit, 380 + Math.min(leaving.length, 10) * 28)
+    } else {
+      commit()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [incoming])
+
   // Keep the current book in place when the list changes (filter, sort, add, delete)
   const idsKey = books.map(b => b.id).join(',')
   const prevActive = useRef<number | null>(startId ?? null)
@@ -159,11 +215,13 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
     if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null }
     velRef.current = 0
     targetRef.current = null
-    rotRef.current = idx * (360 / n)
+    const { step: newStep, wrap: newWrap } = live.current
+    const base = idx * newStep
+    rotRef.current = newWrap ? base + 360 * Math.round((rotRef.current - base) / 360) : base
     setRot(rotRef.current)
     setActiveId(null)
     setOpened(false)
-    settle(n === 1 ? 0 : settleDelay)
+    settle(n === 1 ? 0 : glidingRef.current ? 900 : settleDelay)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey])
 
@@ -177,7 +235,12 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
   useEffect(() => () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
     window.clearTimeout(settleRef.current)
+    transitionTimers.current.forEach(t => window.clearTimeout(t))
   }, [])
+
+  useLayoutEffect(() => {
+    renderedRef.current = new Set([...document.querySelectorAll<HTMLElement>('.bc-book[data-book-id]')].map(el => Number(el.dataset.bookId)))
+  })
 
   // Wheel / trackpad — needs a non-passive listener so the page doesn't scroll underneath
   useEffect(() => {
@@ -294,6 +357,18 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
         /* While a book is open the rest of the ring fades back so its details stay readable in either theme */
         .bc-scene.focus .bc-book:not(.on) .bc-face { opacity: calc(var(--fade, 1) * 0.14); transition: opacity 0.45s ease; }
         .bc-scene.focus .bc-book.behind-info .bc-face { opacity: 0; }
+
+        /* Page switch: leaving books float up and fade; the ring glides; arriving books drop into place */
+        .bc-scene.gliding { transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1); }
+        .bc-scene.gliding .bc-face { transition: opacity 0.5s ease, filter 0.45s ease; }
+        .bc-book.leave { transition: transform 0.5s cubic-bezier(0.4, 0, 1, 1); transition-delay: var(--delay, 0ms); }
+        .bc-book.leave .bc-face { opacity: 0; transition: opacity 0.42s ease; transition-delay: var(--delay, 0ms); }
+        .bc-book.pre, .bc-book.pre .bc-face { transition: none !important; }
+        .bc-book.pre .bc-face { opacity: 0; }
+        .bc-book.arrive { transition: transform 0.7s cubic-bezier(0.22, 1, 0.36, 1); transition-delay: var(--delay, 0ms); }
+        .bc-book.arrive .bc-face { transition: opacity 0.55s ease; transition-delay: var(--delay, 0ms); }
+        .bc-book.appear .bc-face { animation: bcAppear 0.5s ease both; }
+        @keyframes bcAppear { from { opacity: 0; } }
         .bc-book.near .bc-spine {
           box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
         }
@@ -396,7 +471,7 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
         .bc-now-sub { font-size: 11px; color: var(--text3); margin-top: 1px; font-variant-numeric: tabular-nums; }
 
         @media (prefers-reduced-motion: reduce) {
-          .bc-book { transition-duration: 0.01s; }
+          .bc-book, .bc-scene.gliding, .bc-book.leave, .bc-book.arrive { transition-duration: 0.01s !important; transition-delay: 0s !important; }
           .bc-info, .bc-star { animation-duration: 0.01s; animation-delay: 0s; }
         }
       `}</style>
@@ -417,7 +492,7 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
       >
         <div className="bc-floor" />
         {!single && <div className="bc-marker" />}
-        <div className={`bc-scene${active && opened ? ' focus' : ''}`} style={{ transform: `translateZ(${-radius}px) rotateY(${-rot}deg)` }}>
+        <div className={`bc-scene${active && opened ? ' focus' : ''}${gliding ? ' gliding' : ''}`} style={{ transform: `translateZ(${-radius}px) rotateY(${-rot}deg)` }}>
           {books.map((b, i) => {
             const angle = i * step
             const rel   = norm(angle - rot)
@@ -427,7 +502,14 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
             const isNear = i === nearIdx && !open
             // With details floating beside an open book, nothing may sit behind them (keeps their text at full contrast)
             const behindInfo = opened && wide && !on && x + spineW > infoLeft - stageW / 2 - 12
-            if (!on && (Math.abs(rel) > 96 || Math.abs(x) > stageW / 2 + spineW * 2)) return null
+            const phase = motion[b.id]
+            const wasDrawn = renderedRef.current.has(b.id)
+            // Mid-glide, keep drawing books that were on stage so they slide (and fade) out rather than vanish
+            const onStage = Math.abs(rel) <= 96 && Math.abs(x) <= stageW / 2 + spineW * 2
+            if (!on && !phase && !onStage && !(gliding && wasDrawn)) return null
+            const appear = gliding && !wasDrawn && !phase
+            const up = phase === 'leave' || phase === 'pre' ? -70 * k : 0
+            const delay = phase ? Math.min(Math.round(Math.abs(rel) / Math.max(step, 1)), 10) * 40 : 0
 
             const h     = maxH * (0.86 + (hashOf(b.author + b.title) % 15) / 100)
             const color = colorFor(b.title)
@@ -436,7 +518,7 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
             const lift  = (maxH - h) / 2                // align all bottoms on the same shelf line
             const transform =
               `rotateY(${angle}deg) translateZ(${r0}px) translateY(${lift}px) ` +
-              `translate3d(${open ? -shiftX : 0}px, ${(open ? -18 : on ? -RAISE : 0) * k}px, ${(open ? PULL : on ? 26 : 0) * k}px) rotateY(${open ? -90 : 0}deg)`
+              `translate3d(${open ? -shiftX : 0}px, ${(open ? -18 : on ? -RAISE : 0) * k + up}px, ${(open ? PULL : on ? 26 : 0) * k}px) rotateY(${open ? -90 : 0}deg)`
 
             const face = (w: number, hh: number, t: string): React.CSSProperties =>
               ({ width: w, height: hh, marginLeft: -w / 2, marginTop: -hh / 2, transform: t })
@@ -449,8 +531,9 @@ export default function BookCarousel({ books, seekId, startId, settleDelay = 450
                 aria-selected={on}
                 aria-expanded={on ? opened : undefined}
                 aria-label={`${b.title} by ${b.author}`}
-                className={`bc-book${on ? ' on' : ''}${open ? ' open' : ''}${isNear ? ' near' : ''}${behindInfo ? ' behind-info' : ''}`}
-                style={{ transform, ['--fade' as string]: on ? 1 : fade } as React.CSSProperties}
+                data-book-id={b.id}
+                className={`bc-book${on ? ' on' : ''}${open ? ' open' : ''}${isNear && !phase ? ' near' : ''}${behindInfo ? ' behind-info' : ''}${phase ? ` ${phase}` : ''}${appear ? ' appear' : ''}`}
+                style={{ transform, ['--fade' as string]: on ? 1 : fade, ['--delay' as string]: `${delay}ms` } as React.CSSProperties}
               >
                 {/* Spine — faces outward from the ring */}
                 <div

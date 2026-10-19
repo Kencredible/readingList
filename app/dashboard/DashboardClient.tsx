@@ -1,6 +1,13 @@
 'use client'
 import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { flushSync } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import {
+  faBook, faBookOpenReader, faCircleCheck, faBookmark, faTrophy, faSun, faMoon, faArrowRightFromBracket,
+  faAnglesLeft, faAnglesRight, faBars, faMagnifyingGlass, faXmark, faPlus, faCheck,
+} from '@fortawesome/free-solid-svg-icons'
+import Modal, { ModalExit } from './Modal'
 import { Book, colorFor, daysBetween } from './bookUtils'
 import BookCarousel from './BookCarousel'
 import BookGrid from './BookGrid'
@@ -10,60 +17,64 @@ type Tab = 'all' | 'reading' | 'read' | 'want' | 'hof'
 
 const emptyForm = { title: '', author: '', status: 'want' as Book['status'], genre: '', start_date: '', end_date: '', rating: '', notes: '' }
 
-function FormGroup({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+function FormGroup({ label, id, full, children }: { label: string; id: string; full?: boolean; children: React.ReactNode }) {
   return (
     <div className={`form-group${full ? ' full' : ''}`}>
-      <label className="form-label">{label}</label>
+      <label className="form-label" htmlFor={id}>{label}</label>
       {children}
     </div>
   )
 }
 
-function BookForm({ form, setForm, onSave, onCancel, saving, title }: {
+function BookForm({ form, setForm, onSave, onCancel, saving, saved, error, submitLabel }: {
   form: typeof emptyForm
   setForm: React.Dispatch<React.SetStateAction<typeof emptyForm>>
   onSave: () => void
   onCancel: () => void
   saving: boolean
-  title: string
+  saved: boolean
+  error: string | null
+  submitLabel: string
 }) {
   return (
-    <>
-      <h3 className="form-title">{title}</h3>
+    <form onSubmit={e => { e.preventDefault(); if (!saving && !saved) onSave() }} noValidate>
       <div className="form-grid">
-        <FormGroup label="Title *" full><input className="input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Book title" /></FormGroup>
-        <FormGroup label="Author *" full><input className="input" value={form.author} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} placeholder="Author name" /></FormGroup>
-        <FormGroup label="Status">
-          <select className="input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Book['status'] }))}>
+        <FormGroup label="Title *" id="bf-title" full><input id="bf-title" data-autofocus className="input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="Book title" aria-required="true" /></FormGroup>
+        <FormGroup label="Author *" id="bf-author" full><input id="bf-author" className="input" value={form.author} onChange={e => setForm(f => ({ ...f, author: e.target.value }))} placeholder="Author name" aria-required="true" /></FormGroup>
+        <FormGroup label="Status" id="bf-status">
+          <select id="bf-status" className="input" value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value as Book['status'] }))}>
             <option value="want">Want to read</option>
             <option value="reading">Currently reading</option>
             <option value="read">Finished</option>
           </select>
         </FormGroup>
-        <FormGroup label="Genre"><input className="input" value={form.genre} onChange={e => setForm(f => ({ ...f, genre: e.target.value }))} placeholder="e.g. Fiction…" /></FormGroup>
+        <FormGroup label="Genre" id="bf-genre"><input id="bf-genre" className="input" value={form.genre} onChange={e => setForm(f => ({ ...f, genre: e.target.value }))} placeholder="e.g. Fiction…" /></FormGroup>
         {(form.status === 'reading' || form.status === 'read') && (
-          <FormGroup label="Date started"><input type="date" className="input" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} /></FormGroup>
+          <FormGroup label="Date started" id="bf-start"><input id="bf-start" type="date" className="input" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} /></FormGroup>
         )}
         {form.status === 'read' && (
-          <FormGroup label="Date finished"><input type="date" className="input" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} /></FormGroup>
+          <FormGroup label="Date finished" id="bf-end"><input id="bf-end" type="date" className="input" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} /></FormGroup>
         )}
         {form.status === 'read' && (
-          <FormGroup label="Rating">
-            <select className="input" value={form.rating} onChange={e => setForm(f => ({ ...f, rating: e.target.value }))}>
+          <FormGroup label="Rating" id="bf-rating">
+            <select id="bf-rating" className="input" value={form.rating} onChange={e => setForm(f => ({ ...f, rating: e.target.value }))}>
               <option value="">No rating</option>
               {[1,2,3,4,5].map(n => <option key={n} value={n}>{'★'.repeat(n)} {['Poor','Fair','Good','Great','Excellent'][n-1]}</option>)}
             </select>
           </FormGroup>
         )}
-        <FormGroup label="Notes" full>
-          <textarea className="input textarea" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Thoughts, quotes…" />
+        <FormGroup label="Notes" id="bf-notes" full>
+          <textarea id="bf-notes" className="input textarea" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Thoughts, quotes…" />
         </FormGroup>
       </div>
+      {error && <p className="form-error" role="alert">{error}</p>}
       <div className="form-actions">
-        <button onClick={onSave} disabled={saving} className="btn-save">{saving ? 'Saving…' : 'Save book'}</button>
-        <button onClick={onCancel} className="btn-cancel">Cancel</button>
+        <button type="button" onClick={onCancel} className="btn-cancel">Cancel</button>
+        <button type="submit" disabled={saving} className={`btn-save${saved ? ' saved' : ''}`}>
+          {saved ? <><FontAwesomeIcon icon={faCheck} /> Saved</> : saving ? 'Saving…' : submitLabel}
+        </button>
       </div>
-    </>
+    </form>
   )
 }
 
@@ -88,7 +99,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [yearlyGoal, setYearlyGoal] = useState<number | null>(null)
   const [editingGoal, setEditingGoal] = useState(false)
   const [goalInput, setGoalInput] = useState('')
-  const editPanelRef = useRef<HTMLDivElement>(null)
+  const [formClosing, setFormClosing] = useState<ModalExit | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
+  const [savedFlash, setSavedFlash] = useState(false)
+  const [deleteClosing, setDeleteClosing] = useState<ModalExit | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<View>('carousel')
   const [flight, setFlight] = useState<{ key: number; to: View; from: ReturnType<typeof measureBooks> } | null>(null)
   const viewRootRef = useRef<HTMLDivElement>(null)
@@ -104,17 +121,12 @@ export default function DashboardClient({ userName }: { userName: string }) {
   function switchView(next: View) {
     if (next === view || flight) return
     try { localStorage.setItem('bookView', next) } catch { /* storage unavailable */ }
-    setEditingId(null)
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (!reduce && viewRootRef.current) {
       setFlight({ key: Date.now(), to: next, from: measureBooks(viewRootRef.current) })
     }
     setView(next)
   }
-
-  useEffect(() => {
-    if (editingId) editPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [editingId])
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -162,11 +174,35 @@ export default function DashboardClient({ userName }: { userName: string }) {
     document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
   }, [])
 
-  function toggleDark() {
+  function toggleDark(e?: React.MouseEvent<HTMLElement>) {
     const next = !isDark
-    setIsDark(next)
-    document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light')
-    localStorage.setItem('theme', next ? 'dark' : 'light')
+    const root = document.documentElement
+    const apply = () => {
+      flushSync(() => setIsDark(next))
+      root.setAttribute('data-theme', next ? 'dark' : 'light')
+      try { localStorage.setItem('theme', next ? 'dark' : 'light') } catch { /* storage unavailable */ }
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return }
+
+    const vt = (document as Document & { startViewTransition?: (cb: () => void) => { ready: Promise<void> } }).startViewTransition
+    if (!vt) {
+      // No View Transitions: cross-fade every colour instead
+      root.classList.add('theme-fade')
+      apply()
+      window.setTimeout(() => root.classList.remove('theme-fade'), 450)
+      return
+    }
+    // New theme spreads out in a circle from the button that was clicked
+    const r = e?.currentTarget.getBoundingClientRect()
+    const x = r ? r.left + r.width / 2 : window.innerWidth / 2
+    const y = r ? r.top + r.height / 2 : window.innerHeight / 2
+    const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y))
+    vt.call(document, apply).ready.then(() => {
+      root.animate(
+        { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+        { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' },
+      )
+    }).catch(() => {})
   }
 
   const fetchBooks = useCallback(async () => {
@@ -202,31 +238,64 @@ export default function DashboardClient({ userName }: { userName: string }) {
     fetchBooks()
   }
 
+  const formOpen = showForm || editingId !== null
+
   function openForm(book?: Book) {
+    if (formOpen) return
+    setFormError(null); setSavedFlash(false); setFormClosing(null)
     if (book) {
-      if (editingId === book.id) { setEditingId(null); return }
       setEditingId(book.id)
-      setShowForm(false)
       setForm({ title: book.title, author: book.author, status: book.status, genre: book.genre ?? '', start_date: book.start_date ?? '', end_date: book.end_date ?? '', rating: book.rating?.toString() ?? '', notes: book.notes ?? '' })
     } else {
-      setEditingId(null)
-      setShowForm(s => !s)
+      setShowForm(true)
       setForm(emptyForm)
     }
   }
 
+  function dismissForm() { if (!saving && !formClosing) setFormClosing('dismiss') }
+
+  function onFormExited() {
+    setShowForm(false); setEditingId(null); setFormClosing(null); setSavedFlash(false); setFormError(null)
+  }
+
   async function saveBook() {
-    if (!form.title.trim() || !form.author.trim()) return alert('Please enter a title and author.')
+    if (!form.title.trim() || !form.author.trim()) { setFormError('Please enter a title and an author.'); return }
+    setFormError(null)
     setSaving(true)
     const payload = { title: form.title, author: form.author, status: form.status, genre: form.genre || null, start_date: form.start_date || null, end_date: form.end_date || null, rating: form.rating ? parseInt(form.rating) : null, notes: form.notes || null }
-    await fetch(editingId ? `/api/books/${editingId}` : '/api/books', { method: editingId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-    setSaving(false); setShowForm(false); setEditingId(null); fetchBooks()
+    try {
+      const res = await fetch(editingId ? `/api/books/${editingId}` : '/api/books', { method: editingId ? 'PATCH' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      if (!res.ok) throw new Error()
+    } catch {
+      setSaving(false)
+      setFormError("Couldn't save the book. Please try again.")
+      return
+    }
+    setSaving(false)
+    fetchBooks()
+    // Show the tick for a moment, then the modal lifts away
+    setSavedFlash(true)
+    window.setTimeout(() => setFormClosing('saved'), 420)
   }
 
   async function deleteBook() {
-    if (!deletingId) return
+    if (!deletingId || deleteBusy) return
+    setDeleteBusy(true)
     await fetch(`/api/books/${deletingId}`, { method: 'DELETE' })
-    setDeletingId(null); fetchBooks()
+    setDeleteBusy(false)
+    fetchBooks()
+    setDeleteClosing('saved')
+  }
+
+  function openSearch() {
+    setSearchOpen(true)
+    // focus once the field has started expanding
+    window.setTimeout(() => searchInputRef.current?.focus(), 30)
+  }
+
+  function closeSearch() {
+    setSearchOpen(false)
+    setSearchQuery('')
   }
 
   async function logout() {
@@ -235,7 +304,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
   }
 
   function switchTab(t: Tab) {
-    setTab(t); setSelectedYear(null); setSearchQuery('')
+    setTab(t); setSelectedYear(null); setSearchQuery(''); setSearchOpen(false)
     if (isMobile) setSidebarOpen(false)
   }
 
@@ -351,7 +420,14 @@ export default function DashboardClient({ userName }: { userName: string }) {
         }
         .nav-btn:focus-visible, .signout-btn:focus-visible, .toggle-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-        .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; line-height: 1; }
+        .nav-icon { font-size: 16px; width: 20px; display: inline-flex; justify-content: center; flex-shrink: 0; line-height: 1; }
+        .nav-icon svg { width: 16px; height: 16px; }
+
+        .sidebar.collapsed { overflow: visible; }
+        .sidebar.collapsed .sidebar-nav { overflow: visible; }
+        /* Hidden label/count still count towards flex gaps, so drop the gap or the icon sits off-centre */
+        .sidebar.collapsed .nav-btn, .sidebar.collapsed .signout-btn { width: 44px; height: 44px; padding: 0; margin: 0 auto; gap: 0; }
+        .sidebar.collapsed .nav-btn.active::before { left: -14px; top: 11px; bottom: 11px; width: 4px; border-radius: 0 4px 4px 0; }
 
         .nav-label, .signout-label {
           overflow: hidden; opacity: 1; max-width: 130px;
@@ -397,7 +473,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         }
         .mob-bar h1 { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; flex: 1; }
         .mob-bar h1 em { font-style: italic; color: var(--accent); }
-        .hamburger { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface2); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; color: var(--text2); }
+        .hamburger { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface2); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 16px; flex-shrink: 0; color: var(--text2); }
 
         /* ── Main ── */
         .main { flex: 1; padding: 2.5rem 2.5rem 4rem; min-width: 0; }
@@ -436,7 +512,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .rand-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 
         /* ── Forms ── */
-        .form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 8px 32px rgba(40,28,10,0.12); animation: slideDown 0.2s ease; }
+        .form-error { margin-top: 1rem; font-size: 13px; color: var(--red); background: var(--red-light); border-radius: 8px; padding: 8px 12px; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         .form-title { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; margin-bottom: 1.25rem; color: var(--text); }
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -446,9 +522,15 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .input { background: var(--surface2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 12px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; width: 100%; transition: border-color 0.15s; }
         .input:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
         .textarea { resize: vertical; min-height: 70px; }
-        .form-actions { display: flex; gap: 10px; margin-top: 1.25rem; flex-wrap: wrap; }
+        .form-actions { display: flex; gap: 10px; margin-top: 1.25rem; flex-wrap: wrap; justify-content: flex-end; }
         .btn-save { background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; padding: 9px 22px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .btn-save:disabled { opacity: 0.7; cursor: not-allowed; }
+        .btn-save:disabled { cursor: progress; }
+        .btn-save { display: inline-flex; align-items: center; gap: 7px; transition: background 0.2s; }
+        .btn-save:hover { background: var(--accent-hover); }
+        .btn-save.saved { animation: savedPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        @keyframes savedPop { 0% { transform: scale(0.94); } 60% { transform: scale(1.05); } 100% { transform: none; } }
+        .btn-danger { background: var(--red); color: var(--on-red); border: none; border-radius: 10px; padding: 9px 20px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-danger:disabled { cursor: progress; }
         .btn-cancel { background: none; color: var(--text2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
         /* ── Hall of Fame ── */
@@ -463,10 +545,29 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); }
 
         /* ── Search & sort ── */
-        .search-sort-bar { display: flex; gap: 10px; margin-bottom: 1.25rem; align-items: center; }
-        .search-input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 14px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
-        .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); outline: none; }
-        .search-input::placeholder { color: var(--text3); }
+        .search-sort-bar { display: flex; gap: 10px; margin-bottom: 1.25rem; align-items: center; min-height: 40px; }
+        .bar-right { display: flex; gap: 10px; align-items: center; margin-left: auto; flex-shrink: 0; }
+        .search-wrap { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 0 1 auto; }
+        .search-wrap.open { flex: 1 1 auto; }
+        .search-btn, .search-clear {
+          width: 38px; height: 38px; border-radius: 10px; border: none; background: none; flex-shrink: 0;
+          color: var(--text2); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px;
+          transition: background 0.15s, color 0.15s;
+        }
+        .search-btn:hover, .search-clear:hover { background: var(--surface); color: var(--text); }
+        .search-wrap.open .search-btn { color: var(--accent); }
+        .search-field {
+          display: flex; align-items: center; flex: 1; min-width: 0; max-width: 0; opacity: 0; overflow: hidden;
+          transition: max-width 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.25s ease;
+        }
+        .search-wrap.open .search-field { max-width: 560px; opacity: 1; }
+        .search-input {
+          flex: 1; min-width: 0; background: transparent; border: none; border-bottom: 1.5px solid var(--border-strong); border-radius: 0;
+          padding: 8px 2px; font-size: 15px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .search-input:focus { border-bottom-color: var(--accent); box-shadow: 0 1.5px 0 var(--accent); }
+        .search-input::-webkit-search-cancel-button { display: none; }
         .sort-select { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 12px; font-size: 13px; color: var(--text2); font-family: 'DM Sans', sans-serif; outline: none; cursor: pointer; flex-shrink: 0; }
 
         /* ── Reading goal ── */
@@ -522,7 +623,9 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .sidebar-top { display: none; }
           .sidebar-nav { padding-top: 1rem; }
           .sidebar.collapsed { width: 260px !important; }
-          .sidebar.collapsed .nav-btn, .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 10px 14px; }
+          .sidebar.collapsed .nav-btn, .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 10px 14px; width: 100%; height: auto; margin: 0; gap: 12px; }
+          .sidebar.collapsed .nav-btn.active::before { left: 5px; top: 28%; bottom: 28%; width: 3px; border-radius: 3px; }
+          .sidebar.collapsed .nav-tooltip { display: none !important; }
           .sidebar.collapsed .nav-label, .sidebar.collapsed .signout-label { opacity: 1; max-width: 130px; }
           .sidebar.collapsed .nav-count { opacity: 1; width: auto; padding: 2px 8px; margin-left: auto; }
           .sidebar.collapsed .sidebar-top { display: none; }
@@ -543,8 +646,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .nav-btn { min-height: 44px; }
           .signout-btn { min-height: 44px; }
           .search-sort-bar { flex-wrap: wrap; }
-          .sort-select { flex: 1; }
-          .search-input { flex-basis: 100%; }
+          .search-wrap.open { flex-basis: 100%; order: 2; }
           .goal-card { gap: 12px; }
           .goal-edit { width: 100%; }
         }
@@ -571,9 +673,9 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
         {/* Mobile topbar */}
         <div className="mob-bar">
-          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label={sidebarOpen ? 'Close menu' : 'Open menu'} aria-expanded={sidebarOpen}>☰</button>
+          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label={sidebarOpen ? 'Close menu' : 'Open menu'} aria-expanded={sidebarOpen}><FontAwesomeIcon icon={sidebarOpen && isMobile ? faXmark : faBars} /></button>
           <h1>my <em>reading</em> list</h1>
-          <button onClick={() => openForm()} className="add-btn mobile" style={{ padding: '8px 14px', fontSize: 13 }}>＋ Add</button>
+          <button onClick={() => openForm()} className="add-btn mobile" style={{ padding: '8px 14px', fontSize: 13 }}><FontAwesomeIcon icon={faPlus} /> Add</button>
         </div>
 
         {/* Mobile overlay */}
@@ -584,19 +686,19 @@ export default function DashboardClient({ userName }: { userName: string }) {
           <div className="sidebar-top">
             {sidebarOpen && <div className="logo-text">my <em>reading</em><br />list</div>}
             <button className="toggle-btn" onClick={() => setSidebarOpen(o => !o)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={sidebarOpen}>
-              {sidebarOpen ? '◀' : '▶'}
+              <FontAwesomeIcon icon={sidebarOpen ? faAnglesLeft : faAnglesRight} />
             </button>
           </div>
 
           <div className="sidebar-nav">
             {([
-              { label: 'All books',    icon: '📚', t: 'all',     count: books.length },
-              { label: 'Reading now',  icon: '📖', t: 'reading', count: readingBooks.length },
-              { label: 'Finished',     icon: '✓',  t: 'read',    count: readBooks.length },
-              { label: 'Want to read', icon: '🔖', t: 'want',    count: wantBooks.length },
+              { label: 'All books',    icon: faBook,           t: 'all',     count: books.length },
+              { label: 'Reading now',  icon: faBookOpenReader, t: 'reading', count: readingBooks.length },
+              { label: 'Finished',     icon: faCircleCheck,    t: 'read',    count: readBooks.length },
+              { label: 'Want to read', icon: faBookmark,       t: 'want',    count: wantBooks.length },
             ] as const).map(item => (
               <button key={item.t} className={`nav-btn${tab === item.t ? ' active' : ''}`} onClick={() => switchTab(item.t)} aria-current={tab === item.t ? 'page' : undefined} aria-label={`${item.label}, ${item.count} book${item.count !== 1 ? 's' : ''}`}>
-                <span className="nav-icon" aria-hidden>{item.icon}</span>
+                <span className="nav-icon" aria-hidden><FontAwesomeIcon icon={item.icon} /></span>
                 <span className="nav-label">{item.label}</span>
                 <span className="nav-count" aria-hidden>{item.count}</span>
                 <span className="nav-tooltip" aria-hidden>{item.label}</span>
@@ -604,7 +706,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
             ))}
             <div className="nav-divider" />
             <button className={`nav-btn${tab === 'hof' ? ' active' : ''}`} onClick={() => switchTab('hof')} aria-current={tab === 'hof' ? 'page' : undefined} aria-label="Hall of Fame">
-              <span className="nav-icon" aria-hidden>🏆</span>
+              <span className="nav-icon" aria-hidden><FontAwesomeIcon icon={faTrophy} /></span>
               <span className="nav-label">Hall of Fame</span>
               <span className="nav-tooltip" aria-hidden>Hall of Fame</span>
             </button>
@@ -612,13 +714,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
           <div className="sidebar-bottom">
             {sidebarOpen && <div className="sidebar-user">Hi, {userName} 👋</div>}
-            <button onClick={toggleDark} className="signout-btn" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
-              <span className="nav-icon" aria-hidden>{isDark ? '☀️' : '🌙'}</span>
+            <button onClick={e => toggleDark(e)} className="signout-btn" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <span className="nav-icon" aria-hidden><FontAwesomeIcon icon={isDark ? faSun : faMoon} /></span>
               <span className="signout-label">{isDark ? 'Light mode' : 'Dark mode'}</span>
               <span className="nav-tooltip" aria-hidden>{isDark ? 'Light mode' : 'Dark mode'}</span>
             </button>
             <button onClick={logout} className="signout-btn" aria-label="Sign out">
-              <span className="nav-icon" style={{ fontSize: 14 }} aria-hidden>↩</span>
+              <span className="nav-icon" aria-hidden><FontAwesomeIcon icon={faArrowRightFromBracket} /></span>
               <span className="signout-label">Sign out</span>
               <span className="nav-tooltip" aria-hidden>Sign out</span>
             </button>
@@ -633,7 +735,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
               <h2>{TAB_LABELS[tab][0]}</h2>
               <p>{TAB_LABELS[tab][1]}</p>
             </div>
-            <button onClick={() => openForm()} className="add-btn desktop">＋ Add book</button>
+            <button onClick={() => openForm()} className="add-btn desktop"><FontAwesomeIcon icon={faPlus} /> Add book</button>
           </div>
 
           {/* Stats */}
@@ -721,21 +823,40 @@ export default function DashboardClient({ userName }: { userName: string }) {
             </div>
           )}
 
-          {/* Add book form */}
-          {showForm && !editingId && (
-            <div className="form-panel">
-              <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setShowForm(false)} saving={saving} title="Add a book" />
-            </div>
-          )}
-
           {/* Search & sort */}
           <div className="search-sort-bar">
-            <input
-              className="search-input"
-              placeholder={tab === 'hof' || view === 'grid' ? 'Search by title or author…' : 'Type a title or author to jump to it…'}
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-            />
+            <div className={`search-wrap${searchOpen ? ' open' : ''}`} role="search">
+              <button
+                type="button"
+                className="search-btn"
+                onClick={() => searchOpen ? searchInputRef.current?.focus() : openSearch()}
+                aria-label="Search books"
+                aria-expanded={searchOpen}
+                aria-controls="book-search"
+              >
+                <FontAwesomeIcon icon={faMagnifyingGlass} />
+              </button>
+              <div className="search-field" aria-hidden={!searchOpen}>
+                <input
+                  id="book-search"
+                  ref={searchInputRef}
+                  type="search"
+                  className="search-input"
+                  aria-label={tab === 'hof' || view === 'grid' ? 'Search by title or author' : 'Jump to a book by title or author'}
+                  placeholder={tab === 'hof' || view === 'grid' ? 'Search by title or author…' : 'Type a title or author to jump to it…'}
+                  value={searchQuery}
+                  tabIndex={searchOpen ? 0 : -1}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); closeSearch() } }}
+                  onFocus={() => setSearchOpen(true)}
+                  onBlur={() => { if (!searchQuery.trim()) setSearchOpen(false) }}
+                />
+                <button type="button" className="search-clear" onClick={closeSearch} aria-label="Close search" tabIndex={searchOpen ? 0 : -1}>
+                  <FontAwesomeIcon icon={faXmark} />
+                </button>
+              </div>
+            </div>
+            <div className="bar-right">
             {tab !== 'hof' && (
               <select className="sort-select" value={sortBy} onChange={e => setSortBy(e.target.value as typeof sortBy)}>
                 <option value="default">Sort: Default</option>
@@ -755,6 +876,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 </button>
               </div>
             )}
+            </div>
           </div>
           {tab !== 'hof' && q && !seekBook && displayed.length > 0 && (
             <p style={{ fontSize: 13, color: 'var(--text3)', margin: '-0.5rem 0 1rem' }}>No books match &ldquo;{searchQuery}&rdquo;</p>
@@ -818,11 +940,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
                       onEdit={openForm}
                       onDelete={setDeletingId}
                     />
-                    {editingId && (
-                      <div className="form-panel" ref={editPanelRef} style={{ marginTop: '1.5rem' }}>
-                        <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />
-                      </div>
-                    )}
                   </>
                 ) : (
                   <BookGrid
@@ -830,7 +947,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
                     grouped={tab === 'all'}
                     showBadges={tab === 'all'}
                     editingId={editingId}
-                    editForm={<BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />}
                     onEdit={openForm}
                     onDelete={setDeletingId}
                   />
@@ -844,18 +960,32 @@ export default function DashboardClient({ userName }: { userName: string }) {
           )}
         </main>
 
-        {/* Delete modal */}
+        {/* Add / edit book */}
+        {formOpen && (
+          <Modal title={editingId ? 'Edit book' : 'Add a book'} closing={formClosing} onDismiss={dismissForm} onExited={onFormExited}>
+            <BookForm
+              form={form} setForm={setForm} onSave={saveBook} onCancel={dismissForm}
+              saving={saving} saved={savedFlash} error={formError}
+              submitLabel={editingId ? 'Save changes' : 'Add book'}
+            />
+          </Modal>
+        )}
+
+        {/* Delete confirmation */}
         {deletingId && (
-          <div onClick={e => { if (e.target === e.currentTarget) setDeletingId(null) }} style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(20,14,6,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
-            <div style={{ background: 'var(--surface)', borderRadius: 16, padding: '1.75rem', width: '100%', maxWidth: 480, boxShadow: '0 8px 32px rgba(40,28,10,0.12)' }}>
-              <h3 style={{ fontFamily: 'Lora, serif', fontSize: 18, fontWeight: 600, marginBottom: '0.75rem' }}>Remove this book?</h3>
-              <p style={{ fontSize: 14, color: 'var(--text2)' }}>This will permanently remove <strong>{books.find(b => b.id === deletingId)?.title}</strong> from your list.</p>
-              <div style={{ marginTop: '1.25rem', display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                <button onClick={() => setDeletingId(null)} className="btn-cancel">Cancel</button>
-                <button onClick={deleteBook} style={{ background: 'var(--red)', color: 'var(--on-red)', border: 'none', borderRadius: 10, padding: '9px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Remove</button>
-              </div>
+          <Modal
+            title="Remove this book?"
+            size="sm"
+            closing={deleteClosing}
+            onDismiss={() => { if (!deleteBusy && !deleteClosing) setDeleteClosing('dismiss') }}
+            onExited={() => { setDeletingId(null); setDeleteClosing(null) }}
+          >
+            <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5 }}>This will permanently remove <strong style={{ color: 'var(--text)' }}>{books.find(b => b.id === deletingId)?.title}</strong> from your list.</p>
+            <div className="form-actions">
+              <button type="button" onClick={() => setDeleteClosing('dismiss')} className="btn-cancel" data-autofocus>Cancel</button>
+              <button type="button" onClick={deleteBook} className="btn-danger" disabled={deleteBusy}>{deleteBusy ? 'Removing…' : 'Remove'}</button>
             </div>
-          </div>
+          </Modal>
         )}
       </div>
     </>

@@ -8,12 +8,11 @@ const BADGE: Record<Book['status'], { txt: string; color: string; bg: string }> 
   want:    { txt: '🔖 Want',   color: 'var(--amber)',  bg: 'var(--amber-light)' },
 }
 
-export default function BookGrid({ books, grouped, showBadges, editingId, editForm, onEdit, onDelete }: {
+export default function BookGrid({ books, grouped, showBadges, editingId, onEdit, onDelete }: {
   books: Book[]
   grouped: boolean          // All tab: split into reading / finished / wishlist sections
   showBadges: boolean
-  editingId: number | null
-  editForm: React.ReactNode
+  editingId: number | null   // highlights the card being edited
   onEdit: (b: Book) => void
   onDelete: (id: number) => void
 }) {
@@ -48,7 +47,6 @@ export default function BookGrid({ books, grouped, showBadges, editingId, editFo
         .icon-btn { background: none; border: none; cursor: pointer; color: var(--text3); padding: 6px; border-radius: 7px; font-size: 14px; line-height: 1; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
         .icon-btn:hover { background: var(--surface2); color: var(--text); }
         .icon-btn.on { background: var(--accent-light); color: var(--accent); }
-        .inline-form { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 16px; padding: 1.5rem; grid-column: 1 / -1; box-shadow: 0 8px 32px rgba(40,28,10,0.12); animation: slideDown 0.2s ease; }
 
         @media (max-width: 768px) {
           .book-grid { grid-template-columns: 1fr; gap: 8px; }
@@ -58,9 +56,6 @@ export default function BookGrid({ books, grouped, showBadges, editingId, editFo
           .book-cover-fb-title { font-size: 10px; }
           .book-cover-fb-author { display: none; }
           .book-btns { flex-direction: column; align-self: flex-start; margin-top: 0; flex-shrink: 0; }
-          .inline-form { max-width: 100%; box-sizing: border-box; overflow: hidden; }
-          .inline-form .form-grid { max-width: 100%; }
-          .inline-form .input { max-width: 100%; box-sizing: border-box; }
           .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; font-size: 16px; }
         }
       `}</style>
@@ -104,7 +99,6 @@ export default function BookGrid({ books, grouped, showBadges, editingId, editFo
                       <button onClick={() => onDelete(b.id)} className="icon-btn" title="Remove" aria-label={`Remove ${b.title}`}>✕</button>
                     </div>
                   </div>
-                  {isEd && <div className="inline-form">{editForm}</div>}
                 </React.Fragment>
               )
             })}
