@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { Book, colorFor, daysBetween } from './bookUtils'
 import BookCarousel from './BookCarousel'
+import BookGrid from './BookGrid'
+import ViewFlight, { measureBooks, View } from './ViewFlight'
 
 type Tab = 'all' | 'reading' | 'read' | 'want' | 'hof'
 
@@ -87,6 +89,28 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [editingGoal, setEditingGoal] = useState(false)
   const [goalInput, setGoalInput] = useState('')
   const editPanelRef = useRef<HTMLDivElement>(null)
+  const [view, setView] = useState<View>('carousel')
+  const [flight, setFlight] = useState<{ key: number; to: View; from: ReturnType<typeof measureBooks> } | null>(null)
+  const viewRootRef = useRef<HTMLDivElement>(null)
+  const lastCarouselId = useRef<number | null>(null)   // so coming back from the grid faces the same book
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('bookView')
+      if (v === 'grid' || v === 'carousel') setView(v)
+    } catch { /* storage unavailable */ }
+  }, [])
+
+  function switchView(next: View) {
+    if (next === view || flight) return
+    try { localStorage.setItem('bookView', next) } catch { /* storage unavailable */ }
+    setEditingId(null)
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (!reduce && viewRootRef.current) {
+      setFlight({ key: Date.now(), to: next, from: measureBooks(viewRootRef.current) })
+    }
+    setView(next)
+  }
 
   useEffect(() => {
     if (editingId) editPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -250,11 +274,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
   // Search doesn't filter the ring — it spins it to the best match as you type
   const q = searchQuery.trim().toLowerCase()
-  const seekBook = q
+  const seekBook = q && view === 'carousel'
     ? carouselBooks.find(b => b.title.toLowerCase().startsWith(q))
       ?? carouselBooks.find(b => b.title.toLowerCase().includes(q))
       ?? carouselBooks.find(b => b.author.toLowerCase().includes(q))
     : undefined
+
+  const gridBooks = q ? displayed.filter(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)) : displayed
 
   const filteredHofBooks = searchQuery.trim()
     ? hofBooks.filter(b => b.title.toLowerCase().includes(searchQuery.toLowerCase()) || b.author.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -268,109 +294,96 @@ export default function DashboardClient({ userName }: { userName: string }) {
     hof:     ['Hall of Fame', 'Your 5-star reads'],
   }
 
-  const SW = sidebarOpen ? 240 : 64
+  const SW = sidebarOpen ? 240 : 72
 
   return (
     <>
       <style>{`
         .layout { display: flex; min-height: 100vh; }
 
-        /* ── Sidebar ── */
+        /* ── Sidebar: menu items float on the page, no panel behind them ── */
         .sidebar {
-          width: 240px; background: var(--surface); border-right: 1px solid var(--border);
-          display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0;
-          z-index: 20; transition: width 0.22s ease; overflow: hidden;
+          width: 240px; display: flex; flex-direction: column; position: fixed; top: 0; left: 0; bottom: 0;
+          z-index: 20; transition: width 0.22s ease; overflow: hidden; background: transparent;
         }
-        .sidebar.collapsed { width: 64px; }
+        .sidebar.collapsed { width: 72px; }
 
         .sidebar-top {
-          min-height: 70px; padding: 0 1.25rem;
-          display: flex; align-items: center; justify-content: space-between;
-          border-bottom: 1px solid var(--border); gap: 8px; flex-shrink: 0;
+          min-height: 76px; padding: 0 1rem 0 1.5rem;
+          display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0;
         }
         .sidebar.collapsed .sidebar-top { padding: 0; justify-content: center; }
 
         .logo-text {
           font-family: 'Lora', serif; font-size: 17px; font-weight: 600; color: var(--text);
-          line-height: 1.25; white-space: nowrap; overflow: hidden;
-          opacity: 1; transition: opacity 0.15s; pointer-events: none; flex: 1;
+          line-height: 1.25; white-space: nowrap; overflow: hidden; flex: 1;
         }
-        .sidebar.collapsed .logo-text { opacity: 0; width: 0; flex: 0; }
         .logo-text em { font-style: italic; color: var(--accent); font-size: inherit; }
 
         .toggle-btn {
           flex-shrink: 0; width: 30px; height: 30px; border-radius: 8px;
-          border: 1px solid var(--border); background: var(--surface2);
+          border: 1px solid var(--border-strong); background: transparent;
           display: flex; align-items: center; justify-content: center;
-          cursor: pointer; font-size: 12px; color: var(--text3); transition: all 0.15s;
+          cursor: pointer; font-size: 11px; color: var(--text2); transition: background 0.15s, color 0.15s, border-color 0.15s;
         }
-        .toggle-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+        .toggle-btn:hover { background: var(--surface); color: var(--accent); border-color: var(--accent); }
 
-        .sidebar-nav { flex: 1; padding: 0.75rem; overflow-y: auto; overflow-x: hidden; }
-        .sidebar.collapsed .sidebar-nav { padding: 0.75rem 0.5rem; }
+        .sidebar-nav { flex: 1; padding: 0.5rem 0.875rem; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar.collapsed .sidebar-nav { padding: 0.5rem 0.75rem; }
 
-        .nav-btn {
-          display: flex; align-items: center; gap: 10px;
-          padding: 9px 12px; justify-content: flex-start;
-          border-radius: 10px; border: none; width: 100%; cursor: pointer;
-          font-family: 'DM Sans', sans-serif; font-size: 14px; transition: all 0.15s;
-          margin-bottom: 2px; white-space: nowrap; position: relative; background: none; color: var(--text2);
+        .nav-btn, .signout-btn {
+          display: flex; align-items: center; gap: 12px; padding: 10px 14px; justify-content: flex-start;
+          border-radius: 12px; border: 1px solid transparent; width: 100%; cursor: pointer; background: none;
+          font-family: 'DM Sans', sans-serif; font-size: 14px; color: var(--text2);
+          white-space: nowrap; position: relative;
+          transition: background 0.18s, color 0.18s, box-shadow 0.18s, border-color 0.18s;
         }
-        .sidebar.collapsed .nav-btn { justify-content: center; padding: 10px 0; }
-        .nav-btn:hover { background: var(--surface2); color: var(--text); }
-        .nav-btn.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
+        .sidebar.collapsed .nav-btn, .sidebar.collapsed .signout-btn { justify-content: center; padding: 10px 0; }
+        /* Hover: a soft pill lifts in behind the item */
+        .nav-btn:hover, .signout-btn:hover { background: var(--nav-hover); color: var(--text); box-shadow: 0 1px 3px rgba(40,28,10,0.08); }
+        /* Selected: raised pill, accent text, heavier weight and an accent bar, so it never relies on colour alone */
+        .nav-btn.active {
+          background: var(--nav-active); color: var(--accent); font-weight: 600;
+          border-color: var(--nav-active-border); box-shadow: 0 6px 18px rgba(40,28,10,0.10);
+        }
+        .nav-btn.active::before {
+          content: ''; position: absolute; left: 5px; top: 28%; bottom: 28%; width: 3px; border-radius: 3px; background: var(--accent);
+        }
+        .nav-btn:focus-visible, .signout-btn:focus-visible, .toggle-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
         .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; line-height: 1; }
 
-        .nav-label {
+        .nav-label, .signout-label {
           overflow: hidden; opacity: 1; max-width: 130px;
           transition: opacity 0.15s, max-width 0.22s;
         }
-        .sidebar.collapsed .nav-label { opacity: 0; max-width: 0; }
+        .sidebar.collapsed .nav-label, .sidebar.collapsed .signout-label { opacity: 0; max-width: 0; }
 
         .nav-count {
-          margin-left: auto; font-size: 11px; padding: 2px 7px; border-radius: 20px;
+          margin-left: auto; font-size: 11px; padding: 2px 8px; border-radius: 20px;
           font-weight: 500; flex-shrink: 0; opacity: 1; transition: opacity 0.15s;
+          background: var(--surface2); color: var(--text2);
         }
         .sidebar.collapsed .nav-count { opacity: 0; width: 0; padding: 0; margin: 0; overflow: hidden; }
-        .nav-btn.active .nav-count { background: var(--accent); color: white; }
-        .nav-btn:not(.active) .nav-count { background: var(--surface2); color: var(--text3); }
+        .nav-btn.active .nav-count { background: var(--accent); color: var(--on-accent); }
 
         .nav-tooltip {
           display: none; position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
-          background: var(--text); color: var(--bg); font-size: 12px; padding: 5px 10px; border-radius: 6px;
+          background: var(--text); color: var(--bg); font-size: 12px; font-weight: 400; padding: 5px 10px; border-radius: 6px;
           white-space: nowrap; pointer-events: none; z-index: 200;
         }
-        .sidebar.collapsed .nav-btn:hover .nav-tooltip { display: block; }
+        .sidebar.collapsed .nav-btn:hover .nav-tooltip, .sidebar.collapsed .signout-btn:hover .nav-tooltip { display: block; }
 
-        .nav-divider { height: 1px; background: var(--border); margin: 6px 12px; }
-        .sidebar.collapsed .nav-divider { margin: 6px 8px; }
+        .nav-divider { height: 1px; background: var(--border2); margin: 8px 14px; }
+        .sidebar.collapsed .nav-divider { margin: 8px 10px; }
 
-        .sidebar-bottom { padding: 0.75rem; border-top: 1px solid var(--border); flex-shrink: 0; }
-        .sidebar.collapsed .sidebar-bottom { padding: 0.5rem; }
+        .sidebar-bottom { padding: 0.75rem 0.875rem 1rem; flex-shrink: 0; display: flex; flex-direction: column; gap: 4px; }
+        .sidebar.collapsed .sidebar-bottom { padding: 0.75rem; }
 
         .sidebar-user {
-          font-size: 12px; color: var(--text3); padding: 4px 12px 8px;
-          white-space: nowrap; overflow: hidden; opacity: 1; transition: opacity 0.15s;
+          font-size: 12px; color: var(--text2); padding: 4px 14px 6px;
+          white-space: nowrap; overflow: hidden;
         }
-        .sidebar.collapsed .sidebar-user { opacity: 0; height: 0; padding: 0; overflow: hidden; }
-
-        .signout-btn {
-          display: flex; align-items: center; gap: 10px;
-          padding: 9px 12px; justify-content: flex-start;
-          border: none; background: none; color: var(--text3); font-size: 14px; cursor: pointer;
-          width: 100%; font-family: 'DM Sans', sans-serif; border-radius: 10px; transition: background 0.15s;
-          white-space: nowrap; position: relative;
-        }
-        .sidebar.collapsed .signout-btn { justify-content: center; padding: 10px 0; }
-        .signout-btn:hover { background: var(--surface2); color: var(--text); }
-
-        .signout-label {
-          overflow: hidden; opacity: 1; max-width: 130px;
-          transition: opacity 0.15s, max-width 0.22s;
-        }
-        .sidebar.collapsed .signout-label { opacity: 0; max-width: 0; }
-        .sidebar.collapsed .signout-btn:hover .nav-tooltip { display: block; }
 
         /* ── Mobile overlay ── */
         .mob-overlay { display: none; position: fixed; inset: 0; background: rgba(20,14,6,0.45); z-index: 19; }
@@ -384,15 +397,15 @@ export default function DashboardClient({ userName }: { userName: string }) {
         }
         .mob-bar h1 { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; flex: 1; }
         .mob-bar h1 em { font-style: italic; color: var(--accent); }
-        .hamburger { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface2); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; color: var(--text2); }
+        .hamburger { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--surface2); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; flex-shrink: 0; color: var(--text2); }
 
         /* ── Main ── */
         .main { flex: 1; padding: 2.5rem 2.5rem 4rem; min-width: 0; }
         .page-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; gap: 12px; flex-wrap: wrap; }
         .page-header h2 { font-family: 'Lora', serif; font-size: 26px; font-weight: 600; }
         .page-header p { font-size: 14px; color: var(--text3); margin-top: 3px; }
-        .add-btn { display: flex; align-items: center; gap: 8px; background: var(--accent); color: white; border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; box-shadow: 0 2px 8px rgba(45,90,61,0.3); white-space: nowrap; flex-shrink: 0; }
-        .add-btn:hover { background: #245030; }
+        .add-btn { display: flex; align-items: center; gap: 8px; background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; padding: 10px 20px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; box-shadow: 0 2px 8px rgba(45,90,61,0.3); white-space: nowrap; flex-shrink: 0; }
+        .add-btn:hover { background: var(--accent-hover); }
 
         /* ── Stats ── */
         .stats-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 2rem; }
@@ -401,25 +414,25 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .stat-card.h { background: var(--accent); border: 1px solid var(--accent); }
         .stat-lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
         .stat-card.n .stat-lbl { color: var(--text3); }
-        .stat-card.h .stat-lbl { color: rgba(255,255,255,0.75); }
+        .stat-card.h .stat-lbl { color: color-mix(in srgb, var(--on-accent) 85%, transparent); }
         .stat-val { font-family: 'Lora', serif; font-size: 28px; font-weight: 600; line-height: 1; }
         .stat-card.n .stat-val { color: var(--text); }
-        .stat-card.h .stat-val { color: white; }
+        .stat-card.h .stat-val { color: var(--on-accent); }
         .stat-s { font-size: 12px; margin-top: 4px; }
         .stat-card.n .stat-s { color: var(--text3); }
-        .stat-card.h .stat-s { color: rgba(255,255,255,0.6); }
+        .stat-card.h .stat-s { color: color-mix(in srgb, var(--on-accent) 85%, transparent); }
 
         /* ── Year filter ── */
         .year-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 1.25rem; flex-wrap: wrap; }
         .year-lbl { font-size: 12px; color: var(--text3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
-        .year-pill { border-radius: 20px; padding: 5px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; border: 1px solid var(--border2); transition: all 0.15s; }
-        .year-pill.on { background: var(--accent); color: white; border-color: var(--accent); font-weight: 500; }
+        .year-pill { border-radius: 20px; padding: 5px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; border: 1px solid var(--border-strong); transition: all 0.15s; }
+        .year-pill.on { background: var(--accent); color: var(--on-accent); border-color: var(--accent); font-weight: 500; }
         .year-pill:not(.on) { background: none; color: var(--text2); }
 
         /* ── Suggestion ── */
         .rand-card { background: var(--surface); border: 1.5px solid rgba(193,123,42,0.35); border-radius: 16px; padding: 16px 20px; display: flex; align-items: center; gap: 14px; box-shadow: 0 8px 32px rgba(40,28,10,0.12); margin-bottom: 1.75rem; flex-wrap: wrap; }
-        .btn-start { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
-        .btn-skip { background: none; color: var(--text3); border: 1px solid var(--border2); border-radius: 10px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-start { background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; }
+        .btn-skip { background: none; color: var(--text2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 8px 14px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
         .rand-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
 
         /* ── Forms ── */
@@ -430,13 +443,13 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-group.full { grid-column: 1 / -1; }
         .form-label { font-size: 12px; color: var(--text2); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
-        .input { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; width: 100%; transition: border-color 0.15s; }
-        .input:focus { border-color: var(--accent); background: white; }
+        .input { background: var(--surface2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 12px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; width: 100%; transition: border-color 0.15s; }
+        .input:focus { border-color: var(--accent); background: var(--surface); box-shadow: 0 0 0 1px var(--accent); }
         .textarea { resize: vertical; min-height: 70px; }
         .form-actions { display: flex; gap: 10px; margin-top: 1.25rem; flex-wrap: wrap; }
-        .btn-save { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 9px 22px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-save { background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; padding: 9px 22px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
         .btn-save:disabled { opacity: 0.7; cursor: not-allowed; }
-        .btn-cancel { background: none; color: var(--text2); border: 1px solid var(--border2); border-radius: 10px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
+        .btn-cancel { background: none; color: var(--text2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
         /* ── Hall of Fame ── */
         .hof-grid { columns: auto 160px; column-gap: 16px; }
@@ -451,10 +464,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
         /* ── Search & sort ── */
         .search-sort-bar { display: flex; gap: 10px; margin-bottom: 1.25rem; align-items: center; }
-        .search-input { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 14px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
-        .search-input:focus { border-color: var(--accent); }
+        .search-input { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 14px; font-size: 14px; color: var(--text); font-family: 'DM Sans', sans-serif; outline: none; transition: border-color 0.15s; }
+        .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); outline: none; }
         .search-input::placeholder { color: var(--text3); }
-        .sort-select { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 12px; font-size: 13px; color: var(--text2); font-family: 'DM Sans', sans-serif; outline: none; cursor: pointer; flex-shrink: 0; }
+        .sort-select { background: var(--surface); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 12px; font-size: 13px; color: var(--text2); font-family: 'DM Sans', sans-serif; outline: none; cursor: pointer; flex-shrink: 0; }
 
         /* ── Reading goal ── */
         .goal-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px 20px; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 16px; box-shadow: 0 2px 12px rgba(40,28,10,0.08); flex-wrap: wrap; }
@@ -464,37 +477,57 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .goal-bar-fill { height: 100%; background: var(--accent); border-radius: 20px; transition: width 0.5s ease; }
         .goal-label { font-size: 13px; color: var(--text2); }
         .goal-complete { color: var(--accent); font-weight: 600; }
-        .goal-edit-btn { background: none; border: 1px solid var(--border2); border-radius: 8px; padding: 7px 14px; font-size: 13px; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; flex-shrink: 0; transition: background 0.15s; }
+        .goal-edit-btn { background: none; border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 14px; font-size: 13px; color: var(--text2); cursor: pointer; font-family: 'DM Sans', sans-serif; white-space: nowrap; flex-shrink: 0; transition: background 0.15s; }
         .goal-edit-btn:hover { background: var(--surface2); }
         .goal-edit { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
         .goal-input { width: 80px !important; text-align: center; }
+
+        /* ── View toggle: two equal icon buttons with a sliding thumb ── */
+        .view-toggle { display: flex; padding: 3px; gap: 2px; background: var(--surface2); border: 1px solid var(--border-strong); border-radius: 11px; flex-shrink: 0; position: relative; }
+        .view-toggle-thumb {
+          position: absolute; top: 3px; left: 3px; width: 34px; height: 30px; border-radius: 8px;
+          background: var(--surface); box-shadow: 0 1px 4px rgba(40,28,10,0.16); transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        .view-toggle.grid .view-toggle-thumb { transform: translateX(36px); }
+        .view-btn {
+          position: relative; z-index: 1; display: flex; align-items: center; justify-content: center;
+          width: 34px; height: 30px; padding: 0; border: none; background: none; border-radius: 8px; cursor: pointer;
+          color: var(--text3); transition: color 0.2s;
+        }
+        .view-btn:hover { color: var(--text); }
+        .view-btn.on { color: var(--accent); }
+        .view-btn svg { width: 16px; height: 16px; }
+
+        /* While books are flying between views, hide the real ones they're standing in for */
+        .views.landing-carousel .bc-scene { visibility: hidden; }
+        .views.landing-grid .book-cover { visibility: hidden; }
+        .views.landing-grid .book-card { animation: cardIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(min(var(--i, 0), 16) * 26ms); }
+        @keyframes cardIn { from { opacity: 0; transform: translateY(10px) scale(0.97); } to { opacity: 1; transform: none; } }
 
         /* ── Responsive ── */
         @media (max-width: 768px) {
           .mob-bar { display: flex; }
           .sidebar {
             top: 56px;
-            width: 240px !important;
-            left: -240px;
+            width: 260px !important;
+            left: -260px;
             transition: left 0.25s ease;
             box-shadow: none;
+            background: var(--bg);
           }
           .sidebar.mob-open {
             left: 0;
             box-shadow: 4px 0 24px rgba(20,14,6,0.15);
           }
           .sidebar-top { display: none; }
-          .sidebar.collapsed { width: 240px !important; }
-          .sidebar.collapsed .nav-btn { justify-content: flex-start; padding: 9px 12px; }
-          .sidebar.collapsed .nav-label { opacity: 1; max-width: 130px; }
-          .sidebar.collapsed .nav-count { opacity: 1; width: auto; padding: 2px 7px; margin-left: auto; }
+          .sidebar-nav { padding-top: 1rem; }
+          .sidebar.collapsed { width: 260px !important; }
+          .sidebar.collapsed .nav-btn, .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 10px 14px; }
+          .sidebar.collapsed .nav-label, .sidebar.collapsed .signout-label { opacity: 1; max-width: 130px; }
+          .sidebar.collapsed .nav-count { opacity: 1; width: auto; padding: 2px 8px; margin-left: auto; }
           .sidebar.collapsed .sidebar-top { display: none; }
-          .sidebar.collapsed .logo-text { opacity: 1; flex: 1; width: auto; }
-          .sidebar.collapsed .sidebar-bottom { padding: 0.75rem; }
-          .sidebar.collapsed .sidebar-user { opacity: 1; height: auto; padding: 4px 12px 8px; }
-          .sidebar.collapsed .signout-btn { justify-content: flex-start; padding: 9px 12px; }
-          .sidebar.collapsed .signout-label { opacity: 1; max-width: 130px; }
-          .sidebar.collapsed .nav-divider { margin: 6px 12px; }
+          .sidebar.collapsed .sidebar-bottom { padding: 0.75rem 0.875rem 1rem; }
+          .sidebar.collapsed .nav-divider { margin: 8px 14px; }
           .main { margin-left: 0 !important; max-width: 100% !important; padding: 5rem 1rem 4rem; overflow-x: hidden; }
           .add-btn.desktop { display: none !important; }
           .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -510,7 +543,8 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .nav-btn { min-height: 44px; }
           .signout-btn { min-height: 44px; }
           .search-sort-bar { flex-wrap: wrap; }
-          .sort-select { width: 100%; }
+          .sort-select { flex: 1; }
+          .search-input { flex-basis: 100%; }
           .goal-card { gap: 12px; }
           .goal-edit { width: 100%; }
         }
@@ -537,7 +571,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
         {/* Mobile topbar */}
         <div className="mob-bar">
-          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
+          <button className="hamburger" onClick={() => setSidebarOpen(o => !o)} aria-label={sidebarOpen ? 'Close menu' : 'Open menu'} aria-expanded={sidebarOpen}>☰</button>
           <h1>my <em>reading</em> list</h1>
           <button onClick={() => openForm()} className="add-btn mobile" style={{ padding: '8px 14px', fontSize: 13 }}>＋ Add</button>
         </div>
@@ -546,10 +580,10 @@ export default function DashboardClient({ userName }: { userName: string }) {
         {isMobile && sidebarOpen && <div className="mob-overlay on" onClick={() => setSidebarOpen(false)} />}
 
         {/* Sidebar */}
-        <nav className={`sidebar${!sidebarOpen ? ' collapsed' : ''}${isMobile && sidebarOpen ? ' mob-open' : ''}`}>
+        <nav aria-label="Library" className={`sidebar${!sidebarOpen ? ' collapsed' : ''}${isMobile && sidebarOpen ? ' mob-open' : ''}`}>
           <div className="sidebar-top">
             {sidebarOpen && <div className="logo-text">my <em>reading</em><br />list</div>}
-            <button className="toggle-btn" onClick={() => setSidebarOpen(o => !o)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'}>
+            <button className="toggle-btn" onClick={() => setSidebarOpen(o => !o)} title={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-label={sidebarOpen ? 'Collapse sidebar' : 'Expand sidebar'} aria-expanded={sidebarOpen}>
               {sidebarOpen ? '◀' : '▶'}
             </button>
           </div>
@@ -561,32 +595,32 @@ export default function DashboardClient({ userName }: { userName: string }) {
               { label: 'Finished',     icon: '✓',  t: 'read',    count: readBooks.length },
               { label: 'Want to read', icon: '🔖', t: 'want',    count: wantBooks.length },
             ] as const).map(item => (
-              <button key={item.t} className={`nav-btn${tab === item.t ? ' active' : ''}`} onClick={() => switchTab(item.t)}>
-                <span className="nav-icon">{item.icon}</span>
+              <button key={item.t} className={`nav-btn${tab === item.t ? ' active' : ''}`} onClick={() => switchTab(item.t)} aria-current={tab === item.t ? 'page' : undefined} aria-label={`${item.label}, ${item.count} book${item.count !== 1 ? 's' : ''}`}>
+                <span className="nav-icon" aria-hidden>{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
-                <span className="nav-count">{item.count}</span>
-                <span className="nav-tooltip">{item.label}</span>
+                <span className="nav-count" aria-hidden>{item.count}</span>
+                <span className="nav-tooltip" aria-hidden>{item.label}</span>
               </button>
             ))}
             <div className="nav-divider" />
-            <button className={`nav-btn${tab === 'hof' ? ' active' : ''}`} onClick={() => switchTab('hof')}>
-              <span className="nav-icon">🏆</span>
+            <button className={`nav-btn${tab === 'hof' ? ' active' : ''}`} onClick={() => switchTab('hof')} aria-current={tab === 'hof' ? 'page' : undefined} aria-label="Hall of Fame">
+              <span className="nav-icon" aria-hidden>🏆</span>
               <span className="nav-label">Hall of Fame</span>
-              <span className="nav-tooltip">Hall of Fame</span>
+              <span className="nav-tooltip" aria-hidden>Hall of Fame</span>
             </button>
           </div>
 
           <div className="sidebar-bottom">
             {sidebarOpen && <div className="sidebar-user">Hi, {userName} 👋</div>}
-            <button onClick={toggleDark} className="signout-btn" title={isDark ? 'Light mode' : 'Dark mode'}>
-              <span className="nav-icon">{isDark ? '☀️' : '🌙'}</span>
+            <button onClick={toggleDark} className="signout-btn" aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}>
+              <span className="nav-icon" aria-hidden>{isDark ? '☀️' : '🌙'}</span>
               <span className="signout-label">{isDark ? 'Light mode' : 'Dark mode'}</span>
-              <span className="nav-tooltip">{isDark ? 'Light mode' : 'Dark mode'}</span>
+              <span className="nav-tooltip" aria-hidden>{isDark ? 'Light mode' : 'Dark mode'}</span>
             </button>
-            <button onClick={logout} className="signout-btn" title="Sign out">
-              <span className="nav-icon" style={{ fontSize: 14 }}>↩</span>
+            <button onClick={logout} className="signout-btn" aria-label="Sign out">
+              <span className="nav-icon" style={{ fontSize: 14 }} aria-hidden>↩</span>
               <span className="signout-label">Sign out</span>
-              <span className="nav-tooltip">Sign out</span>
+              <span className="nav-tooltip" aria-hidden>Sign out</span>
             </button>
           </div>
         </nav>
@@ -698,7 +732,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
           <div className="search-sort-bar">
             <input
               className="search-input"
-              placeholder={tab === 'hof' ? 'Search by title or author…' : 'Type a title or author to jump to it…'}
+              placeholder={tab === 'hof' || view === 'grid' ? 'Search by title or author…' : 'Type a title or author to jump to it…'}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -709,6 +743,17 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 <option value="rating">Rating ↓</option>
                 <option value="duration">Reading time ↑</option>
               </select>
+            )}
+            {tab !== 'hof' && (
+              <div className={`view-toggle${view === 'grid' ? ' grid' : ''}`} role="radiogroup" aria-label="Layout">
+                <span className="view-toggle-thumb" />
+                <button role="radio" aria-checked={view === 'carousel'} className={`view-btn${view === 'carousel' ? ' on' : ''}`} onClick={() => switchView('carousel')} title="Carousel" aria-label="Carousel view">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><ellipse cx="8" cy="9" rx="6.5" ry="3" /><path d="M5 3v6M8 2.5V9M11 3v6" strokeLinecap="round" /></svg>
+                </button>
+                <button role="radio" aria-checked={view === 'grid'} className={`view-btn${view === 'grid' ? ' on' : ''}`} onClick={() => switchView('grid')} title="Grid" aria-label="Grid view">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden><rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" /><rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" /></svg>
+                </button>
+              </div>
             )}
           </div>
           {tab !== 'hof' && q && !seekBook && displayed.length > 0 && (
@@ -743,7 +788,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                         <div style={{ fontFamily: 'Lora, serif', fontSize: 13, fontWeight: 600, color: 'white', lineHeight: 1.3 }}>{b.title}</div>
                         <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>{b.author}</div>
                         {days && <div style={{ marginTop: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: 'white', fontWeight: 500 }}>Read in {days} day{days !== 1 ? 's' : ''}</div>}
-                        <div style={{ color: '#F5C842', fontSize: 14, marginTop: 2 }}>★★★★★</div>
+                        <div style={{ color: '#F5C842', fontSize: 14, marginTop: 2 }} aria-label="Rated 5 out of 5">★★★★★</div>
                       </div>
                     </div>
                   )
@@ -752,24 +797,50 @@ export default function DashboardClient({ userName }: { userName: string }) {
             )
           )}
 
-          {/* Book carousel */}
+          {/* Books: carousel or grid */}
           {tab !== 'hof' && (
             loading && books.length === 0 ? <div className="empty">Loading your books…</div>
-            : displayed.length === 0 ? (
+            : displayed.length === 0 || (view === 'grid' && gridBooks.length === 0) ? (
               <div className="empty">
                 <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>📭</div>
-                <p>{selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
+                <p>{view === 'grid' && q ? `No results for "${searchQuery}"` : selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
               </div>
             ) : (
-              <>
-                <BookCarousel books={carouselBooks} seekId={seekBook?.id ?? null} onEdit={openForm} onDelete={setDeletingId} />
-                {editingId && (
-                  <div className="form-panel" ref={editPanelRef} style={{ marginTop: '1.5rem' }}>
-                    <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />
-                  </div>
+              <div ref={viewRootRef} className={`views${flight ? ` landing-${flight.to}` : ''}`}>
+                {view === 'carousel' ? (
+                  <>
+                    <BookCarousel
+                      books={carouselBooks}
+                      seekId={seekBook?.id ?? null}
+                      startId={lastCarouselId.current}
+                      settleDelay={flight ? 1250 : 450}
+                      onSettle={id => { lastCarouselId.current = id }}
+                      onEdit={openForm}
+                      onDelete={setDeletingId}
+                    />
+                    {editingId && (
+                      <div className="form-panel" ref={editPanelRef} style={{ marginTop: '1.5rem' }}>
+                        <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <BookGrid
+                    books={gridBooks}
+                    grouped={tab === 'all'}
+                    showBadges={tab === 'all'}
+                    editingId={editingId}
+                    editForm={<BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />}
+                    onEdit={openForm}
+                    onDelete={setDeletingId}
+                  />
                 )}
-              </>
+              </div>
             )
+          )}
+
+          {flight && (
+            <ViewFlight key={flight.key} books={books} from={flight.from} to={flight.to} targetRoot={viewRootRef} onDone={() => setFlight(null)} />
           )}
         </main>
 
@@ -781,7 +852,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
               <p style={{ fontSize: 14, color: 'var(--text2)' }}>This will permanently remove <strong>{books.find(b => b.id === deletingId)?.title}</strong> from your list.</p>
               <div style={{ marginTop: '1.25rem', display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                 <button onClick={() => setDeletingId(null)} className="btn-cancel">Cancel</button>
-                <button onClick={deleteBook} style={{ background: 'var(--red)', color: 'white', border: 'none', borderRadius: 10, padding: '9px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Remove</button>
+                <button onClick={deleteBook} style={{ background: 'var(--red)', color: 'var(--on-red)', border: 'none', borderRadius: 10, padding: '9px 20px', fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'DM Sans, sans-serif' }}>Remove</button>
               </div>
             </div>
           </div>

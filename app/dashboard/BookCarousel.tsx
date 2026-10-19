@@ -30,9 +30,12 @@ function lastName(author: string) {
   return parts[parts.length - 1]
 }
 
-export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
+export default function BookCarousel({ books, seekId, startId, settleDelay = 450, onSettle, onEdit, onDelete }: {
   books: Book[]
   seekId?: number | null   // spin to this book when it changes (driven by the search box)
+  startId?: number | null  // book to face front on mount (e.g. coming back from the grid)
+  settleDelay?: number     // wait before the first spine lift, so a view transition can land first
+  onSettle?: (id: number) => void
   onEdit: (b: Book) => void
   onDelete: (id: number) => void
 }) {
@@ -72,6 +75,9 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
   const coverScale = 1600 / (1600 - (PULL * k - coverW / 2 + spineW / 2))   // perspective enlargement of the open cover
   const infoLeft = stageW / 2 - shiftX + (coverW * coverScale) / 2 + INFO_GAP
 
+  const onSettleRef = useRef(onSettle)
+  onSettleRef.current = onSettle
+
   // Values the animation loop reads without re-binding
   const live = useRef({ step, books, wrap })
   live.current = { step, books, wrap }
@@ -99,6 +105,7 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
       const idx = indexAt(rotRef.current)
       lastIdxRef.current = idx
       setActiveId(books[idx].id)
+      onSettleRef.current?.(books[idx].id)
       if (books.length === 1) setOpened(true)
     }, delay)
   }, [indexAt])
@@ -143,7 +150,7 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
 
   // Keep the current book in place when the list changes (filter, sort, add, delete)
   const idsKey = books.map(b => b.id).join(',')
-  const prevActive = useRef<number | null>(null)
+  const prevActive = useRef<number | null>(startId ?? null)
   prevActive.current = activeId ?? prevActive.current
   useEffect(() => {
     if (!n) return
@@ -156,7 +163,7 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
     setRot(rotRef.current)
     setActiveId(null)
     setOpened(false)
-    settle(n === 1 ? 0 : 450)
+    settle(n === 1 ? 0 : settleDelay)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey])
 
@@ -270,7 +277,7 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
           background: radial-gradient(ellipse 70% 55% at 50% 100%, var(--surface2), transparent 70%);
         }
         .bc-stage:active { cursor: grabbing; }
-        .bc-stage:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+        .bc-stage:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
         .bc-floor {
           position: absolute; left: 50%; bottom: 6%; width: 78%; height: 40px; transform: translateX(-50%);
           background: radial-gradient(ellipse at center, rgba(40,28,10,0.22), transparent 70%); pointer-events: none;
@@ -286,16 +293,17 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
         }
         /* While a book is open the rest of the ring fades back so its details stay readable in either theme */
         .bc-scene.focus .bc-book:not(.on) .bc-face { opacity: calc(var(--fade, 1) * 0.14); transition: opacity 0.45s ease; }
+        .bc-scene.focus .bc-book.behind-info .bc-face { opacity: 0; }
         .bc-book.near .bc-spine {
-          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 2px rgba(240,205,130,0.85), 0 0 18px rgba(240,205,130,0.35);
+          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 2px var(--bg), 0 0 0 4px var(--focus);
         }
         .bc-book.on:not(.open) .bc-spine {
-          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 2px rgba(240,205,130,0.85), 0 18px 26px rgba(0,0,0,0.35);
+          box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18), 0 0 0 2px var(--bg), 0 0 0 4px var(--focus), 0 18px 26px rgba(0,0,0,0.35);
         }
         .bc-marker {
           position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); pointer-events: none;
           width: 0; height: 0; border-left: 7px solid transparent; border-right: 7px solid transparent;
-          border-bottom: 9px solid rgba(240,205,130,0.85); transition: opacity 0.3s;
+          border-bottom: 9px solid var(--focus); transition: opacity 0.3s;
         }
         .bc-stage.is-open .bc-marker { opacity: 0; }
         .bc-stage.single, .bc-stage.single .bc-spine { cursor: default; }
@@ -313,15 +321,15 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
         .bc-spine::before { top: 7px; }
         .bc-spine::after  { bottom: 11px; }
         .bc-spine-title {
-          writing-mode: vertical-rl; font-family: 'Lora', serif; font-weight: 600; color: rgba(255,250,240,0.95);
+          writing-mode: vertical-rl; font-family: 'Lora', serif; font-weight: 600; color: #FFFFFF;
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-height: 0;
           letter-spacing: 0.02em; text-shadow: 0 1px 1px rgba(0,0,0,0.35); padding: 6px 0;
         }
         .bc-spine-author {
           writing-mode: vertical-rl; font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em;
-          color: rgba(255,245,225,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 34%;
+          color: rgba(255,255,255,0.92); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-height: 34%;
         }
-        .bc-spine-mark { font-size: 8px; line-height: 1; color: #F5C842; letter-spacing: -1px; height: 10px; white-space: nowrap; }
+        .bc-spine-mark { font-size: 8px; line-height: 1; color: #FFF3CF; letter-spacing: -1px; height: 10px; white-space: nowrap; }
         .bc-spine-dot { width: 7px; height: 7px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(255,255,255,0.25); }
 
         .bc-cover { border-radius: 2px 6px 6px 2px; overflow: hidden; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15); }
@@ -333,11 +341,11 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
         }
         .bc-cover-fb {
           width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: space-between;
-          padding: 18% 12% 14%; text-align: center; color: rgba(255,250,240,0.95);
+          padding: 18% 12% 14%; text-align: center; color: #FFFFFF;
         }
         .bc-cover-fb-inner { border: 1px solid rgba(240,205,130,0.5); position: absolute; inset: 8px; pointer-events: none; }
         .bc-cover-fb-title { font-family: 'Lora', serif; font-weight: 600; line-height: 1.2; }
-        .bc-cover-fb-author { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; opacity: 0.8; }
+        .bc-cover-fb-author { font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; opacity: 0.92; }
         .bc-back { border-radius: 6px 2px 2px 6px; }
         .bc-top {
           background: repeating-linear-gradient(90deg, #F4EBD9 0 2px, #E6DAC2 2px 3px);
@@ -358,8 +366,8 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
         .bc-title { font-family: 'Lora', serif; font-size: 26px; font-weight: 600; line-height: 1.25; color: var(--text); }
         .bc-author { font-size: 14px; color: var(--text2); margin-top: 3px; }
         .bc-stars { display: flex; gap: 4px; margin: 14px 0 4px; font-size: 24px; line-height: 1; }
-        .bc-star { color: var(--border2); animation: bcStar 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
-        .bc-star.f { color: #E8B923; }
+        .bc-star { color: var(--star-empty); animation: bcStar 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+        .bc-star.f { color: var(--star); }
         @keyframes bcStar { from { opacity: 0; transform: scale(0.3) rotate(-30deg); } to { opacity: 1; transform: none; } }
         .bc-unrated { font-size: 13px; color: var(--text3); margin: 14px 0 4px; }
         .bc-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; margin-top: 14px; }
@@ -372,13 +380,14 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
         }
         .bc-actions { display: flex; gap: 8px; margin-top: 16px; }
         .bc-btn { text-shadow: none; border-radius: 10px; padding: 8px 16px; font-size: 13px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-        .bc-btn.edit { background: var(--accent); color: white; border: none; font-weight: 500; }
-        .bc-btn.del { background: var(--bg); color: var(--text3); border: 1px solid var(--border2); }
+        .bc-btn.edit { background: var(--accent); color: var(--on-accent); border: none; font-weight: 500; }
+        .bc-btn.edit:hover { background: var(--accent-hover); }
+        .bc-btn.del { background: var(--bg); color: var(--text2); border: 1px solid var(--border-strong); }
         .bc-btn.del:hover { color: var(--red); border-color: var(--red); }
 
         .bc-foot { display: flex; justify-content: center; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--text3); }
         .bc-arrow {
-          width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border2); background: var(--surface);
+          width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--surface);
           color: var(--text2); cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center;
         }
         .bc-arrow:hover { border-color: var(--accent); color: var(--accent); }
@@ -416,6 +425,8 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
             const on    = b.id === activeId
             const open  = on && opened
             const isNear = i === nearIdx && !open
+            // With details floating beside an open book, nothing may sit behind them (keeps their text at full contrast)
+            const behindInfo = opened && wide && !on && x + spineW > infoLeft - stageW / 2 - 12
             if (!on && (Math.abs(rel) > 96 || Math.abs(x) > stageW / 2 + spineW * 2)) return null
 
             const h     = maxH * (0.86 + (hashOf(b.author + b.title) % 15) / 100)
@@ -438,16 +449,17 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
                 aria-selected={on}
                 aria-expanded={on ? opened : undefined}
                 aria-label={`${b.title} by ${b.author}`}
-                className={`bc-book${on ? ' on' : ''}${open ? ' open' : ''}${isNear ? ' near' : ''}`}
+                className={`bc-book${on ? ' on' : ''}${open ? ' open' : ''}${isNear ? ' near' : ''}${behindInfo ? ' behind-info' : ''}`}
                 style={{ transform, ['--fade' as string]: on ? 1 : fade } as React.CSSProperties}
               >
                 {/* Spine — faces outward from the ring */}
                 <div
                   className="bc-face bc-spine"
                   data-index={i}
+                  data-fly-id={open ? undefined : b.id}
                   style={{
                     ...face(spineW, h, `translateZ(${coverW / 2}px)`),
-                    background: `linear-gradient(90deg, rgba(0,0,0,0.38), rgba(255,255,255,0.14) 28%, rgba(255,255,255,0) 52%, rgba(0,0,0,0.32)), ${color}`,
+                    background: `linear-gradient(90deg, rgba(0,0,0,0.38), rgba(255,255,255,0.08) 28%, rgba(255,255,255,0) 52%, rgba(0,0,0,0.32)), ${color}`,
                   }}
                 >
                   {b.status === 'read' && b.rating
@@ -458,11 +470,11 @@ export default function BookCarousel({ books, seekId, onEdit, onDelete }: {
                 </div>
 
                 {/* Front cover — on the right-hand side, revealed by the -90° turn */}
-                <div className="bc-face bc-cover" data-index={i} style={face(coverW, h, `rotateY(90deg) translateZ(${spineW / 2}px)`)}>
+                <div className="bc-face bc-cover" data-index={i} data-fly-id={open ? b.id : undefined} style={face(coverW, h, `rotateY(90deg) translateZ(${spineW / 2}px)`)}>
                   {b.cover_url
                     ? <img src={b.cover_url} alt="" draggable={false} />
                     : (
-                      <div className="bc-cover-fb" style={{ background: `linear-gradient(160deg, rgba(255,255,255,0.12), rgba(0,0,0,0.25)), ${color}` }}>
+                      <div className="bc-cover-fb" style={{ background: `linear-gradient(160deg, rgba(255,255,255,0.08), rgba(0,0,0,0.25)), ${color}` }}>
                         <div className="bc-cover-fb-inner" />
                         <div className="bc-cover-fb-title" style={{ fontSize: Math.round(17 * k) }}>{b.title}</div>
                         <div className="bc-cover-fb-author">{b.author}</div>

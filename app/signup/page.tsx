@@ -51,7 +51,7 @@ export default function SignupPage() {
                 value={form.name}
                 onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="Your name"
-                style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -61,7 +61,7 @@ export default function SignupPage() {
                 value={form.email}
                 onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                 placeholder="you@example.com"
-                style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -71,12 +71,12 @@ export default function SignupPage() {
                 value={form.password}
                 onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
                 placeholder="At least 8 characters"
-                style={{ background: 'var(--surface2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
+                style={{ background: 'var(--surface2)', border: '1px solid var(--border-strong)', borderRadius: '10px', padding: '10px 12px', fontSize: '14px', color: 'var(--text)', outline: 'none', fontFamily: 'DM Sans, sans-serif' }}
               />
             </div>
             <button
               type="submit" disabled={loading}
-              style={{ background: 'var(--accent)', color: 'white', border: 'none', borderRadius: '10px', padding: '11px', fontSize: '15px', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'DM Sans, sans-serif', marginTop: '4px' }}
+              style={{ background: 'var(--accent)', color: 'var(--on-accent)', border: 'none', borderRadius: '10px', padding: '11px', fontSize: '15px', fontWeight: 500, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, fontFamily: 'DM Sans, sans-serif', marginTop: '4px' }}
             >
               {loading ? 'Creating account…' : 'Create account'}
             </button>
@@ -85,7 +85,7 @@ export default function SignupPage() {
 
         <p style={{ textAlign: 'center', marginTop: '1.25rem', fontSize: '14px', color: 'var(--text3)' }}>
           Already have an account?{' '}
-          <Link href="/login" style={{ color: 'var(--accent)', fontWeight: 500, textDecoration: 'none' }}>Sign in</Link>
+          <Link href="/login" style={{ color: 'var(--accent)', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '3px' }}>Sign in</Link>
         </p>
       </div>
     </div>
