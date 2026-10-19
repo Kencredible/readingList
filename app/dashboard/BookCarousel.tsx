@@ -45,6 +45,9 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
   const [rot, setRot] = useState(0)
   const [activeId, setActiveId] = useState<number | null>(null)   // settled on: spine raised
   const [opened, setOpened] = useState(false)                       // clicked: turned to show its cover
+  const [sticky, setSticky] = useState(false)                       // browsing open: every book the ring stops on opens
+  const stickyRef = useRef(false)
+  stickyRef.current = sticky
   const [width, setWidth] = useState(900)
   // Switching pages: books that drop out float up and fade, the rest glide into the new ring,
   // and books that join drop down into place. `books` is the list currently on the ring.
@@ -119,7 +122,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
       lastIdxRef.current = idx
       setActiveId(books[idx].id)
       onSettleRef.current?.(books[idx].id)
-      if (books.length === 1 || pendingOpenRef.current === books[idx].id) setOpened(true)
+      if (books.length === 1 || pendingOpenRef.current === books[idx].id || stickyRef.current) setOpened(true)
       pendingOpenRef.current = null
     }, delay)
   }, [indexAt])
@@ -206,6 +209,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
       later(() => { setGliding(false); setMotion({}); transitionTimers.current = [] }, glideMsRef.current)
     }
 
+    setSticky(false)
     if (leaving.length) {
       window.clearTimeout(settleRef.current)
       setActiveId(null)
@@ -243,6 +247,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
     if (!openRequest) return
     const idx = books.findIndex(b => b.id === openRequest.id)
     if (idx < 0) return
+    setSticky(true)
     if (activeId === openRequest.id) { setOpened(true); return }
     pendingOpenRef.current = openRequest.id   // open it as soon as the ring settles there
     goTo(idx)
@@ -341,11 +346,13 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
     } else if (opened) {
       // Any click on the ring puts an open book back. (Chrome doesn't reliably hit-test the
       // turned cover, so a click can land on the stage or a spine behind it.)
-      setOpened(false)
+      closeBook()
     } else if (d.idx !== null && books[d.idx]?.id === activeId) {
-      setOpened(true)
+      openBook()
     } else if (d.idx !== null) {
-      goTo(d.idx)
+      goTo(d.idx)   // while browsing open, this book opens when it arrives
+    } else if (sticky) {
+      closeBook()
     } else if (activeId === null) {
       kick()   // resume a snap that the press interrupted
     }
@@ -356,14 +363,22 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
     const cur = Math.round((targetRef.current ?? rotRef.current) / step)
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goTo(cur + 1) }
     if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); goTo(cur - 1) }
-    if ((e.key === 'Enter' || e.key === ' ') && activeId !== null) { e.preventDefault(); setOpened(o => !o) }
-    if (e.key === 'Escape' && opened) setOpened(false)
+    if ((e.key === 'Enter' || e.key === ' ') && activeId !== null) { e.preventDefault(); if (opened) closeBook(); else openBook() }
+    if (e.key === 'Escape' && (opened || sticky)) closeBook()
   }
+
+  function openBook()  { setOpened(true);  setSticky(true) }
+  function closeBook() { setOpened(false); setSticky(false) }
 
   const active = books.find(b => b.id === activeId) ?? null
   // The book at the front of the ring right now, highlighted even mid-spin so you can see where it will stop
   const nearIdx = active ? books.indexOf(active) : indexAt(rot)
   const near = books[nearIdx]
+  // Browsing open: while the ring turns between books, stay in the opened look (ring faded back,
+  // details showing the book at the front) until the next one settles and opens
+  const browsing = sticky && !single
+  const focusMode = (!!active && opened) || (browsing && !gliding)
+  const infoBook = active && opened ? active : browsing && !gliding ? near : null
 
   return (
     <div className="bc-wrap" ref={wrapRef}>
@@ -394,6 +409,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
           position: absolute; left: 50%; bottom: 6%; width: 78%; height: 40px; transform: translateX(-50%);
           background: radial-gradient(ellipse at center, rgba(40,28,10,0.22), transparent 70%); pointer-events: none;
         }
+        .bc-shift { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1); }
         .bc-scene { position: absolute; left: 50%; top: 50%; width: 0; height: 0; transform-style: preserve-3d; }
         .bc-book {
           position: absolute; left: 0; top: 0; transform-style: preserve-3d;
@@ -404,8 +420,8 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
           opacity: var(--fade, 1);
         }
         /* While a book is open the rest of the ring fades back so its details stay readable in either theme */
-        .bc-scene.focus .bc-book:not(.on) .bc-face { opacity: calc(var(--fade, 1) * 0.14); transition: opacity 0.45s ease; }
-        .bc-scene.focus .bc-book.behind-info .bc-face { opacity: 0; }
+        .bc-scene.focus .bc-book:not(.on):not(.near) .bc-face { opacity: calc(var(--fade, 1) * 0.14); transition: opacity 0.45s ease; }
+        .bc-scene.focus .bc-book.behind-info:not(.on):not(.open) .bc-face { opacity: 0; }   /* outranks the dim/bright rules above */
 
         /* Page switch: leaving books float up and fade; the ring glides; arriving books drop into place */
         .bc-scene.gliding { transition: transform 0.75s cubic-bezier(0.22, 1, 0.36, 1); }
@@ -481,6 +497,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
           animation: bcPanelIn 0.5s 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
           text-shadow: 0 1px 10px var(--bg);
         }
+        .bc-info.quick { animation-duration: 0.3s; animation-delay: 0s; }
         .bc-info.stacked { max-width: 520px; margin: 1rem auto 0; padding: 0 0.5rem; text-align: center; animation-name: bcPanelUp; }
         .bc-info.stacked .bc-stars, .bc-info.stacked .bc-actions { justify-content: center; }
         .bc-info.stacked .bc-meta { text-align: left; }
@@ -528,7 +545,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
 
       <div
         ref={stageRef}
-        className={`bc-stage${opened ? ' is-open' : ''}${single ? ' single' : ''}`}
+        className={`bc-stage${opened || browsing ? ' is-open' : ''}${single ? ' single' : ''}`}
         style={{ height: maxH + 190 * k }}
         tabIndex={0}
         role="listbox"
@@ -548,7 +565,8 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
         )}
         <div className="bc-floor" />
         {!single && <div className="bc-marker" />}
-        <div className={`bc-scene${active && opened ? ' focus' : ''}${gliding ? ' gliding' : ''}`} style={{ transform: `translateZ(${-radius}px) rotateY(${-rot}deg)` }}>
+        <div className="bc-shift" style={{ transform: `translateX(${focusMode ? -shiftX : 0}px)` }}>
+        <div className={`bc-scene${focusMode ? ' focus' : ''}${gliding ? ' gliding' : ''}`} style={{ transform: `translateZ(${-radius}px) rotateY(${-rot}deg)` }}>
           {books.map((b, i) => {
             const angle = i * step
             const rel   = norm(angle - rot)
@@ -557,7 +575,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
             const open  = on && opened
             const isNear = i === nearIdx && !open
             // With details floating beside an open book, nothing may sit behind them (keeps their text at full contrast)
-            const behindInfo = opened && wide && !on && x + spineW > infoLeft - stageW / 2 - 12
+            const behindInfo = focusMode && wide && !on && x - shiftX + spineW > infoLeft - stageW / 2 - 12
             const phase = motion[b.id]?.phase
             const wasDrawn = renderedRef.current.has(b.id)
             // Mid-glide, keep drawing books that were on stage so they slide (and fade) out rather than vanish
@@ -574,7 +592,7 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
             const lift  = (maxH - h) / 2                // align all bottoms on the same shelf line
             const transform =
               `rotateY(${angle}deg) translateZ(${r0}px) translateY(${lift}px) ` +
-              `translate3d(${open ? -shiftX : 0}px, ${(open ? -18 : on ? -RAISE : 0) * k + up}px, ${(open ? PULL : on ? 26 : 0) * k}px) rotateY(${open ? -90 : 0}deg)`
+              `translate3d(0px, ${(open ? -18 : on ? -RAISE : 0) * k + up}px, ${(open ? PULL : on ? 26 : 0) * k}px) rotateY(${open ? -90 : 0}deg)`
 
             const face = (w: number, hh: number, t: string): React.CSSProperties =>
               ({ width: w, height: hh, marginLeft: -w / 2, marginTop: -hh / 2, transform: t })
@@ -630,22 +648,23 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
             )
           })}
         </div>
+        </div>
 
-        {active && opened && wide && (
+        {infoBook && wide && (
           <div className="bc-info-pos" style={{ left: infoLeft, width: Math.min(infoW, stageW - infoLeft - 12) }} onPointerDown={e => e.stopPropagation()}>
-            <BookInfo key={active.id} book={active} onEdit={onEdit} onDelete={onDelete} />
+            <BookInfo key={infoBook.id} book={infoBook} quick={browsing} onEdit={onEdit} onDelete={onDelete} />
           </div>
         )}
       </div>
 
-      {active && opened && !wide && <BookInfo key={active.id} book={active} onEdit={onEdit} onDelete={onDelete} stacked />}
+      {infoBook && !wide && <BookInfo key={infoBook.id} book={infoBook} quick={browsing} onEdit={onEdit} onDelete={onDelete} stacked />}
 
       {!single && <div className="bc-foot">
         <button className="bc-arrow" aria-label="Previous book" onClick={() => goTo(Math.round((targetRef.current ?? rotRef.current) / step) - 1)}>‹</button>
         <div className="bc-now" aria-live="polite">
           <div className="bc-now-title">{near?.title}</div>
           <div className="bc-now-sub">
-            {nearIdx + 1} / {n} · {opened ? 'click the ring to put it back' : active ? 'click the book to open it' : 'scroll, drag or use ← →'}
+            {nearIdx + 1} / {n} · {browsing ? 'scroll or use ← → to flip through · click the ring or press Esc to close' : opened ? 'click the ring to put it back' : active ? 'click the book to open it' : 'scroll, drag or use ← →'}
           </div>
         </div>
         <button className="bc-arrow" aria-label="Next book" onClick={() => goTo(Math.round((targetRef.current ?? rotRef.current) / step) + 1)}>›</button>
@@ -654,11 +673,12 @@ export default function BookCarousel({ books: incoming, seekId, openRequest, bac
   )
 }
 
-function BookInfo({ book: b, onEdit, onDelete, stacked }: {
+function BookInfo({ book: b, onEdit, onDelete, stacked, quick }: {
   book: Book
   onEdit: (b: Book) => void
   onDelete: (id: number) => void
   stacked?: boolean
+  quick?: boolean   // swapping between books while browsing open: no long entrance
 }) {
   const st = STATUS[b.status]
   const meta: [string, string][] = []
@@ -673,7 +693,7 @@ function BookInfo({ book: b, onEdit, onDelete, stacked }: {
   }
 
   return (
-    <div className={`bc-info${stacked ? ' stacked' : ''}`}>
+    <div className={`bc-info${stacked ? ' stacked' : ''}${quick ? ' quick' : ''}`}>
       <span className="bc-chip" style={{ color: st.color, background: st.bg }}>{st.label}</span>
       <div className="bc-title">{b.title}</div>
       <div className="bc-author">by {b.author}</div>
@@ -681,7 +701,7 @@ function BookInfo({ book: b, onEdit, onDelete, stacked }: {
       {b.rating ? (
         <div className="bc-stars" aria-label={`Rated ${b.rating} out of 5`}>
           {[1, 2, 3, 4, 5].map(n => (
-            <span key={n} className={`bc-star${n <= b.rating! ? ' f' : ''}`} style={{ animationDelay: `${0.5 + n * 0.07}s` }}>★</span>
+            <span key={n} className={`bc-star${n <= b.rating! ? ' f' : ''}`} style={{ animationDelay: `${(quick ? 0.08 : 0.5) + n * (quick ? 0.04 : 0.07)}s` }}>★</span>
           ))}
         </div>
       ) : (

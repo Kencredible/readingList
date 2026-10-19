@@ -30,6 +30,7 @@
   --nav-hover: #FFFFFF;
   --nav-active: #FFFFFF;
   --nav-active-border: rgba(60,45,20,0.12);
+  --ghost: 7%;                         /* max strength of decorative giant titles over text (keeps AA) */
 }
 
 body {
@@ -79,6 +80,7 @@ html.theme-fade, html.theme-fade *, html.theme-fade *::before, html.theme-fade *
   --nav-hover: #2C2620;
   --nav-active: #2C2620;
   --nav-active-border: rgba(255,235,210,0.28);
+  --ghost: 4%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -109,5 +111,6 @@ html.theme-fade, html.theme-fade *, html.theme-fade *::before, html.theme-fade *
     --nav-hover: #2C2620;
     --nav-active: #2C2620;
     --nav-active-border: rgba(255,235,210,0.28);
+    --ghost: 4%;
   }
 }

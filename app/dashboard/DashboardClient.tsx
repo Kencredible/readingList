@@ -11,6 +11,7 @@ import Modal, { ModalExit } from './Modal'
 import { Book, colorFor, daysBetween } from './bookUtils'
 import BookCarousel from './BookCarousel'
 import BookGrid from './BookGrid'
+import HallOfFame from './HallOfFame'
 import ViewFlight, { measureBooks, View } from './ViewFlight'
 
 type Tab = 'all' | 'reading' | 'read' | 'want' | 'hof'
@@ -541,13 +542,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .btn-danger:disabled { cursor: progress; }
         .btn-cancel { background: none; color: var(--text2); border: 1px solid var(--border-strong); border-radius: 10px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
 
-        /* ── Hall of Fame ── */
-        .hof-grid { columns: auto 160px; column-gap: 16px; }
-        .hof-cover { position: relative; border-radius: 8px; overflow: hidden; break-inside: avoid; margin-bottom: 16px; }
-        .hof-cover img { width: 100%; display: block; }
-        .hof-fb { aspect-ratio: 2/3; display: flex; align-items: center; justify-content: center; background: var(--surface2); }
-        .hof-ov { position: absolute; inset: 0; background: rgba(20,14,6,0.82); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; opacity: 0; transition: opacity 0.2s; padding: 12px; text-align: center; }
-        .hof-cover:hover .hof-ov { opacity: 1; }
 
         /* ── Empty / loading ── */
         .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); }
@@ -909,25 +903,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
                 )}
               </div>
             ) : (
-              <div className="hof-grid">
-                {filteredHofBooks.map(b => {
-                  const days = b.start_date && b.end_date ? daysBetween(b.start_date, b.end_date) : null
-                  return (
-                    <div key={b.id} className="hof-cover">
-                      {b.cover_url
-                        ? <img src={b.cover_url} alt={b.title} />
-                        : <div className="hof-fb"><div style={{ width: 6, height: '50%', borderRadius: 3, background: colorFor(b.title) }} /></div>
-                      }
-                      <div className="hof-ov">
-                        <div style={{ fontFamily: 'Lora, serif', fontSize: 13, fontWeight: 600, color: 'white', lineHeight: 1.3 }}>{b.title}</div>
-                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>{b.author}</div>
-                        {days && <div style={{ marginTop: 4, background: 'rgba(255,255,255,0.15)', borderRadius: 20, padding: '3px 10px', fontSize: 11, color: 'white', fontWeight: 500 }}>Read in {days} day{days !== 1 ? 's' : ''}</div>}
-                        <div style={{ color: '#F5C842', fontSize: 14, marginTop: 2 }} aria-label="Rated 5 out of 5">★★★★★</div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
+              <HallOfFame books={filteredHofBooks} />
             )
           )}
 
