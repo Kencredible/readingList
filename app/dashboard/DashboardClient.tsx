@@ -1,31 +1,10 @@
 'use client'
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-
-type Book = {
-  id: number
-  title: string
-  author: string
-  status: 'want' | 'reading' | 'read'
-  genre: string | null
-  start_date: string | null
-  end_date: string | null
-  rating: number | null
-  notes: string | null
-  cover_url: string | null
-}
+import { Book, colorFor, daysBetween } from './bookUtils'
+import BookCarousel from './BookCarousel'
 
 type Tab = 'all' | 'reading' | 'read' | 'want' | 'hof'
-
-const COLORS = ['#2D5A3D','#2B4FA0','#9B4A1A','#6B3A8F','#1A6B6B','#7A3535','#4A6B1A','#2A5A7A']
-
-function colorFor(t: string) {
-  let h = 0; for (const c of t) h = (h * 31 + c.charCodeAt(0)) & 0xFFFF
-  return COLORS[h % COLORS.length]
-}
-function daysBetween(d1: string, d2?: string) {
-  return Math.max(1, Math.round((new Date(d2 || Date.now()).getTime() - new Date(d1).getTime()) / 86400000))
-}
 
 const emptyForm = { title: '', author: '', status: 'want' as Book['status'], genre: '', start_date: '', end_date: '', rating: '', notes: '' }
 
@@ -107,6 +86,11 @@ export default function DashboardClient({ userName }: { userName: string }) {
   const [yearlyGoal, setYearlyGoal] = useState<number | null>(null)
   const [editingGoal, setEditingGoal] = useState(false)
   const [goalInput, setGoalInput] = useState('')
+  const editPanelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (editingId) editPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [editingId])
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -251,10 +235,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
   ).length
   const goalPct = yearlyGoal ? Math.min(100, Math.round((booksReadThisYear / yearlyGoal) * 100)) : 0
 
-  if (searchQuery.trim()) {
-    const q = searchQuery.toLowerCase()
-    displayed = displayed.filter(b => b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q))
-  }
   if (sortBy === 'title') displayed = [...displayed].sort((a, b) => a.title.localeCompare(b.title))
   else if (sortBy === 'rating') displayed = [...displayed].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
   else if (sortBy === 'duration') displayed = [...displayed].sort((a, b) => {
@@ -262,6 +242,19 @@ export default function DashboardClient({ userName }: { userName: string }) {
     const db = b.start_date && b.end_date ? daysBetween(b.start_date, b.end_date) : Infinity
     return da - db
   })
+
+  // On the All tab, keep the old grouping as the ring order: reading → finished → wishlist
+  const carouselBooks = tab === 'all' && sortBy === 'default'
+    ? (['reading', 'read', 'want'] as const).flatMap(st => displayed.filter(b => b.status === st))
+    : displayed
+
+  // Search doesn't filter the ring — it spins it to the best match as you type
+  const q = searchQuery.trim().toLowerCase()
+  const seekBook = q
+    ? carouselBooks.find(b => b.title.toLowerCase().startsWith(q))
+      ?? carouselBooks.find(b => b.title.toLowerCase().includes(q))
+      ?? carouselBooks.find(b => b.author.toLowerCase().includes(q))
+    : undefined
 
   const filteredHofBooks = searchQuery.trim()
     ? hofBooks.filter(b => b.title.toLowerCase().includes(searchQuery.toLowerCase()) || b.author.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -431,7 +424,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
 
         /* ── Forms ── */
         .form-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.5rem; margin-bottom: 1.75rem; box-shadow: 0 8px 32px rgba(40,28,10,0.12); animation: slideDown 0.2s ease; }
-        .inline-form { background: var(--surface); border: 1.5px solid var(--accent); border-radius: 16px; padding: 1.5rem; grid-column: 1 / -1; box-shadow: 0 8px 32px rgba(40,28,10,0.12); animation: slideDown 0.2s ease; }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         .form-title { font-family: 'Lora', serif; font-size: 16px; font-weight: 600; margin-bottom: 1.25rem; color: var(--text); }
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -445,24 +437,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
         .btn-save { background: var(--accent); color: white; border: none; border-radius: 10px; padding: 9px 22px; font-size: 14px; font-weight: 500; cursor: pointer; font-family: 'DM Sans', sans-serif; }
         .btn-save:disabled { opacity: 0.7; cursor: not-allowed; }
         .btn-cancel { background: none; color: var(--text2); border: 1px solid var(--border2); border-radius: 10px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-family: 'DM Sans', sans-serif; }
-
-        /* ── Book grid ── */
-        .section-hd { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text3); margin: 1.5rem 0 0.75rem; }
-        .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
-        .book-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 2px 12px rgba(40,28,10,0.08); }
-        .book-card.ed { outline: 2px solid var(--accent); }
-        .book-cover { position: relative; width: 100%; padding-bottom: 140%; border-radius: 8px; overflow: hidden; background: var(--surface2); }
-        .book-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-        .book-cover-fb { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-        .book-badge { position: absolute; top: 8px; left: 8px; font-size: 10px; font-weight: 500; padding: 3px 8px; border-radius: 20px; }
-        .book-title { font-family: 'Lora', serif; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); max-width: 100%; }
-        .book-author { font-size: 12px; color: var(--text2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
-        .book-meta { font-size: 11px; color: var(--text3); margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-        .genre-pill { background: var(--surface2); color: var(--text2); font-size: 10px; padding: 1px 7px; border-radius: 20px; }
-        .book-btns { display: flex; gap: 4px; justify-content: flex-end; margin-top: auto; }
-        .icon-btn { background: none; border: none; cursor: pointer; color: var(--text3); padding: 6px; border-radius: 7px; font-size: 14px; line-height: 1; font-family: 'DM Sans', sans-serif; transition: all 0.15s; }
-        .icon-btn:hover { background: var(--surface2); color: var(--text); }
-        .icon-btn.on { background: var(--accent-light); color: var(--accent); }
 
         /* ── Hall of Fame ── */
         .hof-grid { columns: auto 160px; column-gap: 16px; }
@@ -531,14 +505,6 @@ export default function DashboardClient({ userName }: { userName: string }) {
           .form-actions { flex-direction: column; }
           .btn-save, .btn-cancel { width: 100%; text-align: center; padding: 12px; }
           .page-header h2 { font-size: 22px; }
-          .book-grid { grid-template-columns: 1fr; gap: 8px; }
-          .book-card { flex-direction: row; gap: 12px; align-items: flex-start; overflow: hidden; min-width: 0; max-width: 100%; }
-          .book-cover { width: 72px !important; min-width: 72px; padding-bottom: 0 !important; height: 104px !important; flex-shrink: 0; }
-          .book-btns { flex-direction: column; align-self: flex-start; margin-top: 0; flex-shrink: 0; }
-          .inline-form { max-width: 100%; box-sizing: border-box; overflow: hidden; }
-          .inline-form .form-grid { max-width: 100%; }
-          .inline-form .input { max-width: 100%; box-sizing: border-box; }
-          .icon-btn { padding: 8px; min-width: 36px; min-height: 36px; font-size: 16px; }
           .year-pill { padding: 7px 14px; }
           .rand-card { padding: 12px 14px; gap: 10px; }
           .nav-btn { min-height: 44px; }
@@ -732,7 +698,7 @@ export default function DashboardClient({ userName }: { userName: string }) {
           <div className="search-sort-bar">
             <input
               className="search-input"
-              placeholder="Search by title or author…"
+              placeholder={tab === 'hof' ? 'Search by title or author…' : 'Type a title or author to jump to it…'}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -745,6 +711,9 @@ export default function DashboardClient({ userName }: { userName: string }) {
               </select>
             )}
           </div>
+          {tab !== 'hof' && q && !seekBook && displayed.length > 0 && (
+            <p style={{ fontSize: 13, color: 'var(--text3)', margin: '-0.5rem 0 1rem' }}>No books match &ldquo;{searchQuery}&rdquo;</p>
+          )}
 
           {/* Hall of Fame */}
           {tab === 'hof' && (
@@ -783,70 +752,24 @@ export default function DashboardClient({ userName }: { userName: string }) {
             )
           )}
 
-          {/* Book list */}
+          {/* Book carousel */}
           {tab !== 'hof' && (
-            loading ? <div className="empty">Loading your books…</div>
+            loading && books.length === 0 ? <div className="empty">Loading your books…</div>
             : displayed.length === 0 ? (
               <div className="empty">
                 <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.5 }}>📭</div>
-                <p>{searchQuery ? `No results for "${searchQuery}"` : selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
+                <p>{selectedYear ? `No books started in ${selectedYear}` : 'No books here yet'}</p>
               </div>
-            ) : (() => {
-              const groups: [string, Book[]][] = tab === 'all'
-                ? [['Currently reading', displayed.filter(b => b.status === 'reading')], ['Finished', displayed.filter(b => b.status === 'read')], ['Want to read', displayed.filter(b => b.status === 'want')]]
-                : [['', displayed]]
-
-              const inlineForm = (
-                <div className="inline-form">
-                  <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />
-                </div>
-              )
-
-              return groups.filter(([, items]) => items.length > 0).map(([label, items]) => (
-                <div key={label || 'group'}>
-                  {label && <div className="section-hd">{label}</div>}
-                  <div className="book-grid">
-                    {items.map(b => {
-                      const color = colorFor(b.title)
-                      const isEd  = editingId === b.id
-                      let meta = ''
-                      if (b.status === 'read' && b.start_date && b.end_date) meta = `${daysBetween(b.start_date, b.end_date)} days`
-                      else if (b.status === 'reading' && b.start_date) meta = `${daysBetween(b.start_date)}d in`
-                      const bgMap:    Record<string,string> = { read: 'var(--accent-light)', reading: 'var(--blue-light)', want: 'var(--amber-light)' }
-                      const colorMap: Record<string,string> = { read: 'var(--accent)',       reading: 'var(--blue)',       want: 'var(--amber)' }
-                      const txtMap:   Record<string,string> = { read: '✓ Read',              reading: '● Reading',         want: '🔖 Want' }
-                      return (
-                        <React.Fragment key={b.id}>
-                          <div className={`book-card${isEd ? ' ed' : ''}`}>
-                            <div className="book-cover">
-                              {b.cover_url
-                                ? <img src={b.cover_url} alt={b.title} />
-                                : <div className="book-cover-fb"><div style={{ width: 6, height: '60%', borderRadius: 3, background: color }} /></div>
-                              }
-                              {tab === 'all' && <span className="book-badge" style={{ background: bgMap[b.status], color: colorMap[b.status] }}>{txtMap[b.status]}</span>}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div className="book-title">{b.title}</div>
-                              <div className="book-author">{b.author}</div>
-                              <div className="book-meta">
-                                {b.genre && <span className="genre-pill">{b.genre}</span>}
-                                {meta && <span>{meta}</span>}
-                                {b.rating && <span style={{ color: 'var(--amber)' }}>{'★'.repeat(b.rating)}</span>}
-                              </div>
-                            </div>
-                            <div className="book-btns">
-                              <button onClick={() => openForm(b)} className={`icon-btn${isEd ? ' on' : ''}`} title="Edit">✎</button>
-                              <button onClick={() => setDeletingId(b.id)} className="icon-btn" title="Remove">✕</button>
-                            </div>
-                          </div>
-                          {isEd && inlineForm}
-                        </React.Fragment>
-                      )
-                    })}
+            ) : (
+              <>
+                <BookCarousel books={carouselBooks} seekId={seekBook?.id ?? null} onEdit={openForm} onDelete={setDeletingId} />
+                {editingId && (
+                  <div className="form-panel" ref={editPanelRef} style={{ marginTop: '1.5rem' }}>
+                    <BookForm form={form} setForm={setForm} onSave={saveBook} onCancel={() => setEditingId(null)} saving={saving} title="Edit book" />
                   </div>
-                </div>
-              ))
-            })()
+                )}
+              </>
+            )
           )}
         </main>
 
